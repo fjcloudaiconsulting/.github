@@ -53,7 +53,7 @@ jobs:
               [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "$ref:v$VERSION already exists on a different digest" >&2; exit 1; }
               echo "$img: v$VERSION already promoted"; continue
             fi
-            docker buildx imagetools create -t "$ref:v$VERSION" "$ref@$digest"
+            docker buildx imagetools create --prefer-index=false -t "$ref:v$VERSION" "$ref@$digest"
             inspect "$ref:v$VERSION" '{{json .Manifest}}'
             [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "digest mismatch after tagging $img" >&2; exit 1; }
             echo "$img: v$VERSION -> $digest"
