@@ -34,16 +34,16 @@ jobs:
     strategy:
       matrix:
         include:
-          - {image: backend, context: backend, target: ''}
-          - {image: migrations, context: backend, target: migrations}
-          - {image: frontend, context: frontend, target: ''}
+          - {image: backend, context: backend, target: '', build-contexts: ''}
+          - {image: migrations, context: backend, target: migrations, build-contexts: ''}
+          - {image: frontend, context: frontend, target: '', build-contexts: 'backend=backend'}
     permissions: {contents: read, packages: write}
     uses: fjcloudaiconsulting/.github/.github/workflows/build-image.yml@v1
     with:
       image: ${{ matrix.image }}
       context: ${{ matrix.context }}
       target: ${{ matrix.target }}
-      # frontend only: build-contexts: backend=backend   (also optional: file)
+      build-contexts: ${{ matrix.build-contexts }}   # optional input: file
 ```
 
 **promote-release** (retags the release commit's `sha-<7>` images as `vX.Y.Z`, never builds). The caller's `release`
