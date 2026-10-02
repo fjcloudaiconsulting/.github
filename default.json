@@ -5,5 +5,15 @@
     ":semanticCommits",
     "docker:pinDigests",
     "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "packageRules": [
+    {
+      "description": "Shared workflows are consumed by major tag (RELEASE_CONTRACT.md): track major tags only, never pin to a digest.",
+      "matchPackageNames": [
+        "fjcloudaiconsulting/.github"
+      ],
+      "extractVersion": "^(?<version>v\\d+)$",
+      "pinDigests": false
+    }
   ]
 }
