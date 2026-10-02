@@ -1,0 +1,87 @@
+on:
+  workflow_call:
+    inputs:
+      image: {type: string, required: true}
+      context: {type: string, default: .}
+      file: {type: string, default: ''}
+      target: {type: string, default: ''}
+      build-contexts: {type: string, default: ''}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: meta
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          [[ $IMAGE =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "bad image name: $IMAGE" >&2; exit 1; }
+          v=$(cat version.txt)
+          [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version.txt: $v" >&2; exit 1; }
+          changed=$(git diff --name-only HEAD^ HEAD)
+          grep -qxF '.release-please-manifest.json' <<<"$changed" || v="$v-dev+${GITHUB_SHA::7}"
+          repo=${GITHUB_REPOSITORY,,}
+          push=false
+          if [ "$EVENT_NAME" = push ] && [ "$REF" = refs/heads/main ]; then push=true; fi
+          {
+            echo "version=$v"
+            echo "push=$push"
+            echo "tag=ghcr.io/$repo/$IMAGE:sha-${GITHUB_SHA::7}"
+            echo "title=${GITHUB_REPOSITORY#*/}/$IMAGE"
+          } >> "$GITHUB_OUTPUT"
+      - if: steps.meta.outputs.push == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+      - id: guard
+        if: steps.meta.outputs.push == 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          err=$(mktemp)
+          if labels=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image.Config.Labels}}' 2>"$err"); then
+            [ -n "$labels" ] || { echo "empty inspect output for $TAG" >&2; exit 1; }
+            rev=$(jq -r '(. // {})["org.opencontainers.image.revision"] // ""' <<<"$labels")
+            [ -n "$rev" ] || { echo "$TAG exists but has no revision label" >&2; exit 1; }
+            [ "$rev" = "$GITHUB_SHA" ] || { echo "$TAG exists for a different revision (7-char collision)" >&2; exit 1; }
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif grep -qi 'not found' "$err"; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$err" >&2; exit 1
+          fi
+      - if: steps.guard.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - if: steps.guard.outputs.skip != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.file }}
+          target: ${{ inputs.target }}
+          build-contexts: ${{ inputs.build-contexts }}
+          platforms: linux/amd64
+          provenance: false
+          push: ${{ steps.meta.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tag }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_REVISION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.title=${{ steps.meta.outputs.title }}
+          cache-from: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,scope=${{ inputs.image }},mode=max
