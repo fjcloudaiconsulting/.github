@@ -187,5 +187,29 @@ class Probe(unittest.TestCase):
         self.assertTrue(any("smoke" in x for x in f), f)
 
 
+class Main(unittest.TestCase):
+    def plan(self, argv, fetch=None):
+        import contextlib, io
+        out = io.StringIO()
+        old = probe.real_fetch
+        probe.real_fetch = fetch or (lambda p: (_ for _ in ()).throw(AssertionError("no fetch expected")))
+        try:
+            with contextlib.redirect_stdout(out):
+                probe.main(argv)
+        finally:
+            probe.real_fetch = old
+        return json.loads(out.getvalue())
+
+    def test_invalid_targets_could_not_run_without_fetch(self):
+        for t in ("evil/other", "fjcloudaiconsulting/", "fjcloudaiconsulting/a/b", "fjcloudaiconsulting/x y"):
+            self.assertEqual(self.plan([t])[t.split("@")[0]]["verdict"], "could-not-run", t)
+
+    def test_unexpected_error_is_per_repo_could_not_run(self):  # one bad file must not empty the plan
+        def fetch(path):
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")
+        plan = self.plan(["fjcloudaiconsulting/a", "evil/other"], fetch)
+        self.assertEqual({k: v["verdict"] for k, v in plan.items()}, {"fjcloudaiconsulting/a": "could-not-run", "evil/other": "could-not-run"})
+
+
 if __name__ == "__main__":
     unittest.main()

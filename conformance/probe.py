@@ -11,8 +11,9 @@ import sys
 import urllib.error
 import urllib.request
 
-TARGETS = {"fjcloudaiconsulting/ziftbook": ["Backend Checks", "Frontend Checks"],
-           "fjcloudaiconsulting/tbd": ["Backend Checks", "Frontend Checks"]}
+TARGETS = ["fjcloudaiconsulting/ziftbook", "fjcloudaiconsulting/tbd"]
+CHECKS = ["Backend Checks", "Frontend Checks"]
+TARGET = re.compile(r"fjcloudaiconsulting/[A-Za-z0-9._-]+(@\S+)?")
 SHARED = "fjcloudaiconsulting/.github/.github/workflows/%s.yml@v1"
 PROTECTING = {"pull_request", "required_status_checks", "non_fast_forward", "deletion"}
 USES = re.compile(r"^\s*-?\s*uses:(.*)$")
@@ -63,9 +64,7 @@ def check(repo, ref, required_checks, fetch):
     base = "/repos/" + repo
     branch = getjson(base + "/branches/main")
     rules = getjson(base + "/rules/branches/main", [])
-    status, text = get(base + "/commits/" + ref)  # a missing ref is 422, which get() rejects
-    if status == 404:
-        raise CouldNotRun("ref %s does not resolve" % ref)
+    status, text = get(base + "/commits/" + ref)  # a missing ref is 422 (rejected by get) or 404 (empty body, fails the parse)
     try:
         snap = json.loads(text)["sha"]
     except (ValueError, KeyError, TypeError):
@@ -149,10 +148,12 @@ def main(argv):
     for t in argv or TARGETS:
         repo, _, ref = t.partition("@")
         try:
-            f = check(repo, ref or "main", TARGETS.get(repo, ["Backend Checks", "Frontend Checks"]), real_fetch)
+            if not TARGET.fullmatch(t):
+                raise CouldNotRun("invalid target %r" % t)
+            f = check(repo, ref or "main", CHECKS, real_fetch)
             plan[repo] = {"verdict": "drift" if f else "clean", "findings": f}
-        except CouldNotRun as e:
-            plan[repo] = {"verdict": "could-not-run", "findings": [str(e)]}
+        except Exception as e:  # one bad repo must not empty the plan
+            plan[repo] = {"verdict": "could-not-run", "findings": [str(e) or type(e).__name__]}
     print(json.dumps(plan, indent=2, sort_keys=True))
 
 

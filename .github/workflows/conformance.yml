@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           gh label create conformance --force --color B60205 --description "Release contract drift" > /dev/null
           gh issue list --label conformance --state open --limit 100 --json number,title > open.json
-          for repo in $(jq -r 'keys[]' plan.json); do
+          while IFS= read -r repo; do
             title="Conformance drift: $repo"
             verdict=$(jq -r --arg r "$repo" '.[$r].verdict' plan.json)
             num=$(jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty' open.json)
@@ -62,7 +62,7 @@ jobs:
                 gh issue edit "$num" --body-file body.md
               fi
             fi
-          done
+          done < <(jq -r 'keys[]' plan.json)
       - name: Fail on could-not-run
         if: always() && hashFiles('plan.json') != ''
         shell: bash
