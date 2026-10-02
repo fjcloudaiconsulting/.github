@@ -88,3 +88,11 @@ fails there by design.
 - Non-root images, and a Dockerfile that maps `ARG APP_VERSION` / `ARG APP_REVISION` to the app's environment
   (sections 3, 5); `revision` in the liveness JSON (section 5).
 - `concurrency` and the Renovate preset (section 9).
+
+## Conformance probe
+
+`conformance/probe.py` checks each app repo (public API only) against the release contract; the `conformance`
+workflow runs it weekly and on dispatch (`targets`: space list of `owner/repo[@ref]`) and keeps one issue
+`Conformance drift: <repo>` per drifting repo (closed when clean). A ref dispatch rewrites that repo's issue until the
+next run on `main`. Items marked *(review)* in the contract are not probed. Scheduled workflows in public repos are
+disabled after 60 days without commits; Renovate PRs keep this repo active and GitHub emails before disabling.

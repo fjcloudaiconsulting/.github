@@ -12,10 +12,10 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 
 ## 1. Commits and pull requests
 
-- MUST squash-merge; the PR title becomes the commit and MUST be a Conventional Commit
+- MUST squash-merge *(review)*; the PR title becomes the commit and MUST be a Conventional Commit
   (`type(scope): summary`). The `pr-title` reusable workflow enforces it.
-- MUST protect `main` (classic branch protection or a ruleset): PR required, required checks green, no
-  force push, no deletion. Approvals: 0, or 1 with the owner on the bypass list. Bot-authored PRs (release,
+- MUST protect `main` (classic branch protection or a ruleset): PR required *(review)*, required checks green, no
+  force push *(review)*, no deletion *(review)*. Approvals *(review)*: 0, or 1 with the owner on the bypass list. Bot-authored PRs (release,
   Renovate) are approved by the owner.
 - MUST name the aggregate required checks `Backend Checks` and `Frontend Checks` (one per area the repo
   has, plus any app extras). These gate jobs live in the app's own workflow, not inside a reusable
@@ -39,6 +39,8 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST publish to GHCR as `ghcr.io/fjcloudaiconsulting/<repo>/<image>`.
 - Image names: `backend`, `frontend`, `migrations`. Add another name only when it contains different
   code. Workers and schedulers run the `backend` image with a different command.
+- Apps build, promote and smoke-test through the shared `build-image`, `promote-release` and `smoke` workflows at `@v1`;
+  the probe checks that each is called, not how the app builds.
 - MUST build each image **once**, on the `main` push, tagged `sha-<7 char sha>` (as produced by
   `docker/metadata-action` `type=sha`). The build reads the version from `version.txt`: on the release
   commit (the one that changes `.release-please-manifest.json`) the baked version is exactly `X.Y.Z`; on
