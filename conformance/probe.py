@@ -13,7 +13,7 @@ import urllib.request
 
 TARGETS = ["fjcloudaiconsulting/ziftbook", "fjcloudaiconsulting/tbd"]
 CHECKS = ["Backend Checks"]  # always required; "Frontend Checks" is added when the repo has frontend/
-TARGET = re.compile(r"fjcloudaiconsulting/[A-Za-z0-9._-]+(@\S+)?")
+TARGET = re.compile(r"fjcloudaiconsulting/[A-Za-z0-9._-]+(@(?!.*\.\.)[A-Za-z0-9._/-]+)?")
 SHARED = "fjcloudaiconsulting/.github/.github/workflows/%s.yml@v1"
 PROTECTING = {"pull_request", "required_status_checks", "non_fast_forward", "deletion"}
 USES = re.compile(r"^\s*-?\s*uses:(.*)$")

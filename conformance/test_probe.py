@@ -215,8 +215,11 @@ class Main(unittest.TestCase):
         return json.loads(out.getvalue())
 
     def test_invalid_targets_could_not_run_without_fetch(self):
-        for t in ("evil/other", "fjcloudaiconsulting/", "fjcloudaiconsulting/a/b", "fjcloudaiconsulting/x y"):
-            self.assertEqual(self.plan([t])[t.split("@")[0]]["verdict"], "could-not-run", t)
+        for t in ("evil/other", "fjcloudaiconsulting/", "fjcloudaiconsulting/a/b", "fjcloudaiconsulting/x y",
+                  "fjcloudaiconsulting/a@../b", "fjcloudaiconsulting/a@x?y"):
+            entry = self.plan([t])[t.split("@")[0]]
+            self.assertEqual(entry["verdict"], "could-not-run", t)
+            self.assertIn("invalid target", " ".join(entry["findings"]), t)
 
     def test_unexpected_error_is_per_repo_could_not_run(self):  # one bad file must not empty the plan
         def fetch(path):
