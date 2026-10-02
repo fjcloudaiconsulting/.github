@@ -1,0 +1,60 @@
+on:
+  workflow_call:
+    inputs:
+      version: {type: string, required: true}
+      images: {type: string, required: true}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ inputs.version }}
+      IMAGES: ${{ inputs.images }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Login
+        shell: bash
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+      - name: Promote the release commit's images
+        shell: bash
+        run: |
+          [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION" >&2; exit 1; }
+          [ -n "${IMAGES// /}" ] || { echo "images is empty" >&2; exit 1; }
+          o=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq '.object.type + " " + .object.sha')
+          read -r type rel <<<"$o"
+          if [ "$type" = tag ]; then rel=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$rel" --jq .object.sha); fi
+          [ -n "$rel" ] || { echo "cannot resolve tag v$VERSION" >&2; exit 1; }
+          # Sets OUT; returns 1 only when the tag is absent. Any other error, or empty output, fails the job.
+          # Never call it in a command substitution: its exit must reach the job shell.
+          inspect() {
+            local err; err=$(mktemp)
+            if OUT=$(docker buildx imagetools inspect "$1" --format "$2" 2>"$err"); then
+              [ -n "$OUT" ] || { echo "empty inspect output for $1" >&2; exit 1; }
+            elif grep -qi 'not found' "$err"; then
+              return 1
+            else
+              cat "$err" >&2; exit 1
+            fi
+          }
+          for img in $IMAGES; do
+            [[ $img =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "bad image name: $img" >&2; exit 1; }
+            ref=ghcr.io/${GITHUB_REPOSITORY,,}/$img
+            src=$ref:sha-${rel::7}
+            inspect "$src" '{{json .Image.Config.Labels}}' || { echo "no sha- image for $rel ($img); never rebuilt by design" >&2; exit 1; }
+            jq -e --arg v "$VERSION" --arg r "$rel" \
+              '.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r' <<<"$OUT" >/dev/null \
+              || { echo "$src labels do not match version $VERSION / revision $rel" >&2; exit 1; }
+            inspect "$src" '{{json .Manifest}}'
+            digest=$(jq -r .digest <<<"$OUT")
+            if inspect "$ref:v$VERSION" '{{json .Manifest}}'; then
+              [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "$ref:v$VERSION already exists on a different digest" >&2; exit 1; }
+              echo "$img: v$VERSION already promoted"; continue
+            fi
+            docker buildx imagetools create -t "$ref:v$VERSION" "$ref@$digest"
+            inspect "$ref:v$VERSION" '{{json .Manifest}}'
+            [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "digest mismatch after tagging $img" >&2; exit 1; }
+            echo "$img: v$VERSION -> $digest"
+          done
