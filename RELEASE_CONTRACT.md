@@ -7,7 +7,7 @@ Shared building blocks live in this repo and are consumed pinned to a major tag
 (`uses: fjcloudaiconsulting/.github/.github/workflows/<name>.yml@v1`, Renovate preset `#v1`). A change to
 them never reaches an app until the app bumps the tag.
 
-`MUST` items are checked by the conformance probe, or by review where marked *(review)*. `SHOULD` items are
+The conformance probe checks the items listed in README.md; every other `MUST` is checked by review. `SHOULD` items are
 the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 
 ## 1. Commits and pull requests
@@ -39,6 +39,7 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST publish to GHCR as `ghcr.io/fjcloudaiconsulting/<repo>/<image>`.
 - Image names: `backend`, `frontend`, `migrations`. Add another name only when it contains different
   code. Workers and schedulers run the `backend` image with a different command.
+- MUST build, promote and smoke-test through the shared `build-image`, `promote-release` and `smoke` workflows at `@v1`.
 - MUST build each image **once**, on the `main` push, tagged `sha-<7 char sha>` (as produced by
   `docker/metadata-action` `type=sha`). The build reads the version from `version.txt`: on the release
   commit (the one that changes `.release-please-manifest.json`) the baked version is exactly `X.Y.Z`; on

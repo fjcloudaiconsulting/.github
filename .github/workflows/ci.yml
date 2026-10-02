@@ -18,3 +18,12 @@ jobs:
   pr-title:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/pr-title.yml
+  conformance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests
+        shell: bash
+        run: python3 -m unittest discover -s conformance

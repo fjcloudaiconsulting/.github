@@ -1,0 +1,73 @@
+name: conformance
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Space-separated owner/repo[@ref]; empty = all targets'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: conformance
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TARGETS: ${{ inputs.targets }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Probe
+        shell: bash
+        run: |
+          read -ra targets <<< "$TARGETS"
+          python3 conformance/probe.py "${targets[@]}" > plan.json
+      - name: Update issues
+        if: always() && hashFiles('plan.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create conformance --force --color B60205 --description "Release contract drift" > /dev/null
+          gh issue list --label conformance --state open --limit 100 --json number,title > open.json
+          while IFS= read -r repo; do
+            title="Conformance drift: $repo"
+            verdict=$(jq -r --arg r "$repo" '.[$r].verdict' plan.json)
+            num=$(jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty' open.json)
+            if [ "$verdict" = clean ]; then
+              if [ -n "$num" ]; then
+                gh issue comment "$num" --body "Clean again: $RUN_URL"
+                gh issue close "$num"
+              fi
+              continue
+            fi
+            jq -r --arg r "$repo" '.[$r].findings | sort[] | "~~~\n" + . + "\n~~~\n"' plan.json > body.md
+            if [ -z "$num" ]; then
+              gh issue create --title "$title" --label conformance --body-file body.md
+            else
+              old=$(gh issue view "$num" --json body --jq .body | tr -d '\r')
+              if [ "$old" != "$(cat body.md)" ]; then
+                gh issue edit "$num" --body-file body.md
+              fi
+            fi
+          done < <(jq -r 'keys[]' plan.json)
+      - name: Fail on could-not-run
+        if: always() && hashFiles('plan.json') != ''
+        shell: bash
+        run: |
+          if jq -e 'any(.[]; .verdict == "could-not-run")' plan.json > /dev/null; then
+            echo "::error::a target could not be probed, see the issue"
+            exit 1
+          fi
