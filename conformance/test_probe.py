@@ -12,6 +12,7 @@ SNAP = "b" * 40
 SHARED = "fjcloudaiconsulting/.github/.github/workflows/%s.yml@v1"
 CI = "jobs:\n  x:\n" + "".join("    uses: %s\n" % (SHARED % n) for n in ("pr-title", "build-image", "promote-release", "smoke"))
 CHECKS = ["Backend Checks", "Frontend Checks"]
+ALWAYS = ["Backend Checks"]
 GOOD = {
     ".github/workflows/ci.yml": CI + "      - uses: actions/checkout@%s # v7.0.1\n" % SHA,
     "release-please-config.json": json.dumps({"release-type": "simple", "bump-minor-pre-major": True}),
@@ -32,7 +33,7 @@ def run(files=None, branch=PROTECTED, rules=(), ref="main", errors=None, calls=N
     for p, text in files.items():
         if text is not None:
             routes["/repos/o/r/contents/" + p] = text
-    for d in (".github/workflows", ".github/actions"):
+    for d in (".github/workflows", ".github/actions", "frontend"):
         names = sorted({p[len(d) + 1:].split("/")[0] for p, t in files.items() if p.startswith(d + "/") and t is not None})
         if names:
             routes["/repos/o/r/contents/" + d] = json.dumps([{"name": n} for n in names])
@@ -46,7 +47,7 @@ def run(files=None, branch=PROTECTED, rules=(), ref="main", errors=None, calls=N
         key = path.split("?")[0]
         return (200, routes[key]) if key in routes else (404, "")
 
-    return probe.check(R, ref, CHECKS, fetch)
+    return probe.check(R, ref, ALWAYS, fetch)
 
 
 def wf(*uses):
@@ -103,9 +104,22 @@ class Probe(unittest.TestCase):
 
     def test_one_of_two_missing(self):  # fence: any()
         branch = {"protected": True, "protection": {"required_status_checks": {"contexts": ["Backend Checks"]}}}
-        f = run(branch=branch)
+        f = run({"frontend/package.json": "{}"}, branch=branch)
         self.assertEqual(len(f), 1, f)
         self.assertIn("Frontend Checks", f[0])
+
+    def test_backend_only_repo_needs_only_backend(self):  # fence: always-both
+        branch = {"protected": True, "protection": {"required_status_checks": {"contexts": ["Backend Checks"]}}}
+        self.assertEqual(run(branch=branch), [])
+
+    def test_frontend_dir_requires_frontend_check(self):  # fence: never-frontend
+        branch = {"protected": True, "protection": {"required_status_checks": {"contexts": ["Backend Checks"]}}}
+        f = run({"frontend/package.json": "{}"}, branch=branch)
+        self.assertEqual(f, ["required check missing: Frontend Checks"])
+
+    def test_frontend_lookup_error_could_not_run(self):  # guard
+        with self.assertRaises(probe.CouldNotRun):
+            run(errors={"contents/frontend": 500})
 
     def test_unprotected(self):
         self.assertTrue(run(branch={"protected": False}))

@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 
 TARGETS = ["fjcloudaiconsulting/ziftbook", "fjcloudaiconsulting/tbd"]
-CHECKS = ["Backend Checks", "Frontend Checks"]
+CHECKS = ["Backend Checks"]  # always required; "Frontend Checks" is added when the repo has frontend/
 TARGET = re.compile(r"fjcloudaiconsulting/[A-Za-z0-9._-]+(@\S+)?")
 SHARED = "fjcloudaiconsulting/.github/.github/workflows/%s.yml@v1"
 PROTECTING = {"pull_request", "required_status_checks", "non_fast_forward", "deletion"}
@@ -91,7 +91,9 @@ def check(repo, ref, required_checks, fetch):
     for r in rules:
         if r.get("type") == "required_status_checks":
             have |= {c["context"] for c in r.get("parameters", {}).get("required_status_checks", [])}
-    findings += ["required check missing: " + c for c in required_checks if c not in have]
+    status, _ = get("%s/contents/frontend?ref=%s" % (base, snap))
+    need = required_checks + (["Frontend Checks"] if status == 200 else [])
+    findings += ["required check missing: " + c for c in need if c not in have]
 
     # 2 + 3. actions
     files = [".github/workflows/" + n for n in listing(".github/workflows") if re.search(r"\.ya?ml$", n)]
