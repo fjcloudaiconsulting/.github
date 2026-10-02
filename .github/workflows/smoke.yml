@@ -13,15 +13,18 @@ jobs:
       packages: read
     env:
       VERSION: ${{ inputs.version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - id: rel
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION" >&2; exit 1; }
           o=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq '.object.type + " " + .object.sha')
           read -r type rel <<<"$o"
-          if [ "$type" = tag ]; then rel=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$rel" --jq .object.sha); fi
+          while [ "$type" = tag ]; do
+            o=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$rel" --jq '.object.type + " " + .object.sha'); read -r type rel <<<"$o"
+          done
           [ -n "$rel" ] || { echo "cannot resolve tag v$VERSION" >&2; exit 1; }
           echo "sha=$rel" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,6 +32,8 @@ jobs:
           ref: ${{ steps.rel.outputs.sha }}
           persist-credentials: false
       - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
       - name: Smoke test the published images
         shell: bash
@@ -38,9 +43,9 @@ jobs:
           COMPOSE_FILE: ${{ inputs.compose-file }}
         run: |
           export IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,} TAG=v$VERSION
-          trap 'docker compose logs || true; docker compose --profile "*" down -v' EXIT
+          trap 'docker compose logs || true; docker compose --profile "*" down -v || true' EXIT
           docker compose --profile '*' config --format json | jq -e --arg p "$IMAGE_PREFIX" --arg t "$TAG" \
-            '[.services[] | select(has("build") or ((.image // "") | startswith($p + "/") and (endswith(":" + $t) | not)))] | length == 0' >/dev/null \
+            '([.services[] | select(has("build") or ((.image // "") | startswith($p + "/") and (endswith(":" + $t) | not)))] | length == 0) and .services.migrations.image == $p + "/migrations:" + $t' >/dev/null \
             || { echo "compose must use $IMAGE_PREFIX/*:$TAG images only, no build:" >&2; exit 1; }
           docker compose --profile migrate run --rm migrations
           docker compose --profile migrate run --rm migrations

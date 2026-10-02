@@ -29,7 +29,7 @@ jobs:
           v=$(cat version.txt)
           [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version.txt: $v" >&2; exit 1; }
           changed=$(git diff --name-only HEAD^ HEAD)
-          grep -qx '.release-please-manifest.json' <<<"$changed" || v="$v-dev+${GITHUB_SHA::7}"
+          grep -qxF '.release-please-manifest.json' <<<"$changed" || v="$v-dev+${GITHUB_SHA::7}"
           repo=${GITHUB_REPOSITORY,,}
           push=false
           if [ "$EVENT_NAME" = push ] && [ "$REF" = refs/heads/main ]; then push=true; fi
@@ -53,8 +53,9 @@ jobs:
           err=$(mktemp)
           if labels=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image.Config.Labels}}' 2>"$err"); then
             [ -n "$labels" ] || { echo "empty inspect output for $TAG" >&2; exit 1; }
-            jq -e --arg sha "$GITHUB_SHA" '.["org.opencontainers.image.revision"] == $sha' <<<"$labels" >/dev/null \
-              || { echo "$TAG exists for a different revision (7-char collision)" >&2; exit 1; }
+            rev=$(jq -r '(. // {})["org.opencontainers.image.revision"] // ""' <<<"$labels")
+            [ -n "$rev" ] || { echo "$TAG exists but has no revision label" >&2; exit 1; }
+            [ "$rev" = "$GITHUB_SHA" ] || { echo "$TAG exists for a different revision (7-char collision)" >&2; exit 1; }
             echo "skip=true" >> "$GITHUB_OUTPUT"
           elif grep -qi 'not found' "$err"; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -83,4 +84,4 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.title=${{ steps.meta.outputs.title }}
           cache-from: type=gha,scope=${{ inputs.image }}
-          cache-to: type=gha,scope=${{ inputs.image }}
+          cache-to: type=gha,scope=${{ inputs.image }},mode=max
