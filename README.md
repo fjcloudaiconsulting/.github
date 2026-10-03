@@ -9,6 +9,18 @@ The shared foundation every application repo builds on:
 
 Changes here are released by tagging. Apps pick them up by bumping their pinned tag.
 
+### Publishing a release
+
+Only an org admin can create, move or delete `v*` tags, because the `tag protection` ruleset enforces it.
+The owner publishes `vX.Y.Z` and then force-moves `v1`; the push prints "Bypassed rule violations", which is expected.
+
+```
+git tag vX.Y.Z <sha> && git push origin vX.Y.Z
+git tag -f v1 vX.Y.Z && git push -f origin v1
+```
+
+Agents and apps cannot move tags. An agent asks the owner to "tag it".
+
 ## Reusable workflows
 
 Call as `fjcloudaiconsulting/.github/.github/workflows/<name>.yml@v1`. None sets `concurrency`: the caller owns it
