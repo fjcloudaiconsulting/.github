@@ -89,9 +89,22 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 ## 8. Deploy handoff
 
 - An app repo never deploys and never writes to `aws-infra`. Renovate in `fjcloudaiconsulting/aws-infra`
-  watches the GHCR images and opens a PR bumping the production tag to the new `vX.Y.Z`. Merging that PR
-  is the deploy (Flux applies it). Production manifests reference `vX.Y.Z` only.
-- Non-production environments MAY follow `sha-` tags automatically.
+  watches the GHCR images and bumps the manifests to the newest `vX.Y.Z`; Flux applies what lands on `main`.
+  The other rules in this section bind `aws-infra`.
+- A release is not a deploy: it labels a digest that is already built (§3). It reaches an environment only
+  through a change in `aws-infra`.
+- App images in every environment MUST reference `vX.Y.Z` only. `sha-` tags cannot be ordered, so nothing
+  can follow them.
+- Non-production environments (staging) MUST follow `vX.Y.Z`: Renovate bumps them and merges without a PR
+  once `aws-infra` CI passes.
+- Production MUST be bumped by a pull request; the owner merges it, and merging it is the deploy. Once an
+  app has a staging environment, a production bump MUST NOT reference a tag newer than the one that app's
+  staging references on `aws-infra` `main`, and MUST NOT be merged until that tag works on staging. An
+  `aws-infra` CI check will enforce the tag rule; until it exists, review does.
+- A release that fails on staging never goes to production: fix forward with the next release, which
+  replaces it in the open production bump PR. Its GitHub release MAY be marked as a prerelease, so the
+  `aws-infra` release drift probe (which reads the latest release) stops reporting it while the fix is
+  pending. Renovate reads GHCR tags, not GitHub releases, so the flag does not stop the bump PRs.
 
 ## 9. CI hygiene
 
