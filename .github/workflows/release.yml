@@ -38,7 +38,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for r in $(gh pr list --state merged --label 'autorelease: pending' --json mergeCommit --jq '.[].mergeCommit.oid'); do
+          # Assigned first: a failing command substitution in a for-list does not trip errexit. --repo: there is no checkout.
+          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --state merged --label 'autorelease: pending' \
+            --json mergeCommit --jq '.[].mergeCommit.oid')
+          for r in $prs; do
             [ "$r" != "$GITHUB_SHA" ] || continue
             runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$r/check-runs?per_page=100" --paginate --jq '.check_runs[]' | jq -s .)
             jq -e '

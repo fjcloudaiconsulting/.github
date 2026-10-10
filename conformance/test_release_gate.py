@@ -3,7 +3,12 @@ import json, os, pathlib, re, stat, subprocess, tempfile, unittest
 
 WF = pathlib.Path(__file__).parent.parent / ".github/workflows/release.yml"
 FAKE_GH = """#!/bin/bash
-if [ "$1" = pr ]; then printf '%s\\n' $FAKE_PRS; exit 0; fi
+if [ "$1" = pr ]; then
+  # Like the real gh on a runner with no checkout: without --repo there is no repository to list.
+  case " $* " in *" --repo o/r "*) ;; *) echo "fatal: not a git repository" >&2; exit 1;; esac
+  [ -z "${FAKE_PR_FAIL:-}" ] || exit 1
+  printf '%s\\n' $FAKE_PRS; exit 0
+fi
 sha=$(sed -E 's#.*/commits/([^/]+)/check-runs.*#\\1#' <<<"$2")
 cat "$FAKE_DIR/$sha.json"
 """
@@ -14,7 +19,7 @@ def gate_script():
     return "\n".join(l[10:] for l in m.group(1).splitlines())
 
 
-def run(prs, runs_by_sha, head="head"):
+def run(prs, runs_by_sha, head="head", pr_fail=False):
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
         gh = d / "gh"
@@ -23,7 +28,7 @@ def run(prs, runs_by_sha, head="head"):
         for sha, runs in runs_by_sha.items():
             (d / f"{sha}.json").write_text("\n".join(json.dumps(r) for r in runs))
         env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}", FAKE_DIR=str(d), FAKE_PRS=" ".join(prs),
-                   GITHUB_SHA=head, GITHUB_REPOSITORY="o/r")
+                   GITHUB_SHA=head, GITHUB_REPOSITORY="o/r", FAKE_PR_FAIL="1" if pr_fail else "")
         return subprocess.run(["bash", "-c", gate_script()], env=env, capture_output=True, text=True).returncode
 
 
@@ -55,6 +60,9 @@ class ReleaseGate(unittest.TestCase):
 
     def test_no_pending_pr(self):
         self.assertEqual(0, run([], {}))
+
+    def test_pr_listing_failure_fails_closed(self):  # fence: a failing for-list substitution passed silently
+        self.assertNotEqual(0, run([], {}, pr_fail=True))
 
 
 if __name__ == "__main__":

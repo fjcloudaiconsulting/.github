@@ -61,9 +61,11 @@ jobs:
 **release** (replaces calling promote-release and smoke directly): release-please, then promote and smoke on
 `release_created`. Before releasing it checks that every merged `autorelease: pending` Release PR's own commit has a
 green latest `Backend Checks` run (and `Frontend Checks`, if that run exists), and fails otherwise; re-run the job once
-that commit's CI is done. It skips when `main` has moved past the triggering commit. The job uses `environment: release`,
-and environment secrets reach a called workflow only with `secrets: inherit`, so the caller needs
-`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` as secrets of its `release` environment and `secrets: inherit`.
+that commit's CI is done. It skips when `main` has moved past the triggering commit. Its `release` job
+declares `environment: release`, so the caller needs `RELEASE_APP_ID` /
+`RELEASE_APP_PRIVATE_KEY` as secrets of its own `release` environment. Pass `secrets: inherit`: GitHub's docs do not
+settle whether environment secrets reach a called workflow without it, and a missing secret is an empty string, not an
+error.
 Reusable-workflow permissions are capped by the caller's, so the caller grants all of them. Inputs: `images` (space
 list), `health-url`, `compose-file` (default `compose.smoke.yaml`); outputs `release_created`, `version`. It calls
 promote-release and smoke at `@v1` (full ref), so changes to those reach apps once `v1` moves.
