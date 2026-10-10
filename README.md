@@ -58,6 +58,33 @@ jobs:
       build-contexts: ${{ matrix.build-contexts }}   # optional input: file
 ```
 
+**release** (replaces calling promote-release and smoke directly): release-please, then promote and smoke on
+`release_created`. Before releasing it checks that every merged `autorelease: pending` Release PR's own commit has a
+green latest `Backend Checks` run (and `Frontend Checks`, if that run exists), and fails otherwise; re-run the job once
+that commit's CI is done. It skips when `main` has moved past the triggering commit. The job uses `environment: release`,
+and environment secrets reach a called workflow only with `secrets: inherit`, so the caller needs
+`RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` as secrets of its `release` environment and `secrets: inherit`.
+Reusable-workflow permissions are capped by the caller's, so the caller grants all of them. Inputs: `images` (space
+list), `health-url`, `compose-file` (default `compose.smoke.yaml`); outputs `release_created`, `version`. It calls
+promote-release and smoke at `@v1` (full ref), so changes to those reach apps once `v1` moves.
+
+```yaml
+jobs:
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend-checks, frontend-checks, image]
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+      packages: write
+    uses: fjcloudaiconsulting/.github/.github/workflows/release.yml@v1
+    with:
+      images: backend frontend migrations
+      health-url: http://localhost:8000/api/healthz
+    secrets: inherit
+```
+
 **promote-release** (retags the release commit's `sha-<7>` images as `vX.Y.Z`, never builds). The caller's `release`
 job (release-please) must expose the outputs `version` (X.Y.Z) and `release_created`, and the tag `vX.Y.Z` must exist:
 

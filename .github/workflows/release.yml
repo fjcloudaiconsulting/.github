@@ -1,0 +1,90 @@
+on:
+  workflow_call:
+    inputs:
+      images: {type: string, required: true}
+      health-url: {type: string, required: true}
+      compose-file: {type: string, required: false, default: compose.smoke.yaml}
+    outputs:
+      release_created:
+        value: ${{ jobs.release.outputs.release_created }}
+      version:
+        value: ${{ jobs.release.outputs.version }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      # release-please acts on main as it is now, not on this commit. If main has moved on, a merged Release PR there
+      # has not passed CI yet, so leave it to the newer commit's run.
+      - id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then echo "latest=true" >> "$GITHUB_OUTPUT"; else echo "main is at $head; skipping"; fi
+      # A merged Release PR's own commit R runs CI in its own run. This run (a later commit) must not tag R until the
+      # gate checks of R are green. Fails, never waits: re-run the job once R's CI has finished.
+      - name: Release commit gate
+        if: steps.head.outputs.latest == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for r in $(gh pr list --state merged --label 'autorelease: pending' --json mergeCommit --jq '.[].mergeCommit.oid'); do
+            [ "$r" != "$GITHUB_SHA" ] || continue
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$r/check-runs?per_page=100" --paginate --jq '.check_runs[]' | jq -s .)
+            jq -e '
+              def latest($n): [.[] | select(.name == $n)] | max_by(.id);
+              latest("Backend Checks").conclusion == "success"
+              and (latest("Frontend Checks") == null or latest("Frontend Checks").conclusion == "success")
+            ' <<<"$runs" >/dev/null || { echo "release commit $r: Backend Checks must exist and Frontend Checks (if any) must be success on their latest run" >&2; exit 1; }
+            echo "release commit $r: gate checks green"
+          done
+      # An App token, not GITHUB_TOKEN, so the Release PR triggers CI and can satisfy required checks.
+      - id: app
+        if: steps.head.outputs.latest == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          # A tag on the release commit counts as creating its workflow files when a later main commit changed one.
+          permission-workflows: write
+      - id: release
+        if: steps.head.outputs.latest == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Full ref, not ./: a local path in a nested call is not guaranteed to resolve to this repo. Pinned to @v1, so a change
+  # to promote-release/smoke reaches callers only once v1 moves.
+  promote:
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    permissions: {contents: read, packages: write}
+    uses: fjcloudaiconsulting/.github/.github/workflows/promote-release.yml@v1
+    with:
+      version: ${{ needs.release.outputs.version }}
+      images: ${{ inputs.images }}
+
+  smoke:
+    needs: [release, promote]
+    if: needs.release.outputs.release_created == 'true'
+    permissions: {contents: read, packages: read}
+    uses: fjcloudaiconsulting/.github/.github/workflows/smoke.yml@v1
+    with:
+      version: ${{ needs.release.outputs.version }}
+      health-url: ${{ inputs.health-url }}
+      compose-file: ${{ inputs.compose-file }}
