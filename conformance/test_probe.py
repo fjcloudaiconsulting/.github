@@ -63,7 +63,12 @@ class Probe(unittest.TestCase):
         self.assertTrue(any("actions/checkout@v7" in x for x in f), f)
 
     def test_allowed_forms(self):  # guard: over-strict regex
-        self.assertEqual(run(wf("./x", "docker://a/b@sha256:" + "0" * 64, "a/b/c@" + SHA, SHARED % "x")), [])
+        self.assertEqual(run(wf("./x", "docker://a/b@sha256:" + "0" * 64, "a/b/c@" + SHA, SHARED % "x",
+                                "fjcloudaiconsulting/.github/actions/uv-sync@v1")), [])
+
+    def test_shared_action_off_major_flagged(self):
+        f = run(wf("fjcloudaiconsulting/.github/actions/uv-sync@main"))
+        self.assertTrue(any("uv-sync@main" in x for x in f), f)
 
     def test_shared_workflow_on_branch_flagged(self):  # fence: prefix whitelist
         f = run(wf("fjcloudaiconsulting/.github/.github/workflows/x.yml@main"))

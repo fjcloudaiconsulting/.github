@@ -1,0 +1,14 @@
+name: no-docker-hub
+description: Fail on image references that resolve to Docker Hub, which rate-limits anonymous pulls from shared runners.
+# Needs a checkout. Pull Docker Hub images through mirror.gcr.io instead (mirror.gcr.io/library/<name> for official images).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        hub='(docker\.io/|index\.docker\.io/|[a-z0-9_-]+(/[a-z0-9._-]+)*[:@])'
+        if git grep -nE "(^|[[:space:]])(FROM|image:)[[:space:]]+\"?(--platform=[^[:space:]]+[[:space:]]+)?$hub|syntax=$hub|uses:[[:space:]]+\"?docker://$hub" \
+             -- '*Dockerfile*' '*compose*.yml' '*compose*.yaml' '.github/workflows/*.yml' '.github/workflows/*.yaml' '*action.yml' '*action.yaml'; then
+          echo "::error::Docker Hub image reference above. Use mirror.gcr.io/library/<name> (official images) or mirror.gcr.io/<org>/<name>."
+          exit 1
+        fi

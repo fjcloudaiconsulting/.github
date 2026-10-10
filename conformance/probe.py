@@ -21,6 +21,7 @@ OK = [re.compile(p) for p in (
     r"\./.*",
     r"docker://\S+@sha256:[0-9a-f]{64}",
     r"fjcloudaiconsulting/\.github/\.github/workflows/[^/@\s]+\.yml@v1",
+    r"fjcloudaiconsulting/\.github/actions/[\w-]+@v1",
     r"[\w.-]+/[\w.-]+(/[^@\s]+)?@[0-9a-f]{40}")]
 RENOVATE = ["renovate.json", "renovate.json5", ".github/renovate.json", ".github/renovate.json5",
             ".renovaterc", ".renovaterc.json", ".renovaterc.json5"]
