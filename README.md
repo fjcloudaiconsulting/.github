@@ -174,7 +174,8 @@ Stages an app does not have are simply absent; app-specific jobs keep their own 
 | Local image smoke (build and import, no push) | `Image Smoke (<image>)` |
 | Image build through `build-image` (one per image) | `Image (<image>)`, shown as `Image (<image>) / build` |
 | Gates (required by branch protection; never rename) | `Backend Checks`, `Frontend Checks` |
-| Release through `release` | `Release`, shown as `Release / release`, `Release / promote`, `Release / smoke` |
+| Release, inline (release-please job, then calls to `promote-release` and `smoke`) | `Release`, `Promote`, `Smoke` |
+| Release through the shared `release` workflow | `Release`, shown as `Release / release`, `Release / promote`, `Release / smoke` |
 | PR title (required; never rename) | `pr-title / check` |
 
 **Steps** that every app has:
@@ -189,6 +190,7 @@ Stages an app does not have are simply absent; app-specific jobs keep their own 
 | ruff / ruff format / mypy / pytest | `Lint backend`, `Check backend format`, `Type-check backend`, `Run backend tests` |
 | lint / typecheck / build / tests | `Lint frontend`, `Type-check frontend`, `Build frontend`, `Run frontend tests` |
 | a gate's verdict | `Verify <what>` (e.g. `Verify every gated job passed`) |
+| inline release job: main-moved check, App token, release-please | `Check main is at this commit`, `Create release token`, `Run release-please` |
 
 ## Conformance probe
 
