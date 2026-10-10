@@ -1,0 +1,49 @@
+name: publish
+
+# Releases this repo: release-please keeps a Release PR open; merging it (the owner's approval) creates vX.Y.Z,
+# then the major tag (v1) moves to the same commit so every app on @v1 picks it up. Only feat/fix/perf/deps
+# commits make a release. Tags are restricted by the `tag protection` ruleset; the Release App is its bypass actor.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      # An App token, not GITHUB_TOKEN, so the Release PR triggers CI and the tags pass the ruleset.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          # The release commit may change workflow files, and so may the moved major tag.
+          permission-workflows: write
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Move the major tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          MAJOR: ${{ steps.release.outputs.major }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ $MAJOR =~ ^[0-9]+$ && $SHA =~ ^[0-9a-f]{40}$ ]] || { echo "bad release outputs: major=$MAJOR sha=$SHA" >&2; exit 1; }
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$MAJOR" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v$MAJOR" -f sha="$SHA" -F force=true > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$MAJOR" -f sha="$SHA" > /dev/null
+          fi
+          echo "v$MAJOR -> $SHA"
