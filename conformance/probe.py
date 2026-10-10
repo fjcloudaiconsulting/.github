@@ -109,8 +109,10 @@ def check(repo, ref, required_checks, fetch):
                 used.append(v)
                 if not any(p.fullmatch(v) for p in OK):
                     findings.append("%s: disallowed uses: %s" % (f, v))
+    # The shared release workflow calls promote-release and smoke itself.
+    released = SHARED % "release" in used
     findings += ["no call to shared workflow " + SHARED % n for n in ("pr-title", "build-image", "promote-release", "smoke")
-                 if SHARED % n not in used]
+                 if SHARED % n not in used and not (released and n in ("promote-release", "smoke"))]
 
     # 4. release-please
     version = read("version.txt")

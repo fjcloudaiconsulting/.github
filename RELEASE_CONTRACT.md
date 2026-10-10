@@ -28,10 +28,12 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST use release-please, release type `simple`, one version for the whole repo (`version.txt`),
   `CHANGELOG.md` at the root, tags `vX.Y.Z`, `bump-minor-pre-major: true` while below 1.0.
 - Only release-please changes `version.txt` and `.release-please-manifest.json`.
-- MUST run release-please with a GitHub App installation token (not `GITHUB_TOKEN`), so the release PR
+- MUST run release-please (directly or through the shared `release` workflow) with a GitHub App installation token (not `GITHUB_TOKEN`), so the release PR
   triggers CI and can satisfy required checks.
 - MUST release only from a `main` commit whose CI is fully green (the release job `needs` every CI job of
   the same run).
+  The shared `release` workflow does this by `needs` in the caller plus a gate: every merged `autorelease: pending`
+  Release PR's own commit must have a green latest `Backend Checks` (and `Frontend Checks`, if present) run.
 - Release happens when the owner merges the release-please PR. No release on every merge.
 
 ## 3. Images
