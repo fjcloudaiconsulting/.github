@@ -1,6 +1,7 @@
 name: uv-sync
 description: Install uv with its cache and sync the locked environment, with the venv on PATH.
-# uv and Python versions come from the project: [tool.uv] required-version in pyproject.toml and .python-version.
+# uv version: <working-directory>/.tool-versions (`uv X.Y.Z`) when present, else [tool.uv] required-version, else latest.
+# .tool-versions pins CI without uv enforcing it on local runs, as required-version does. Python: .python-version.
 inputs:
   working-directory: {description: Directory holding pyproject.toml and uv.lock, default: backend}
 runs:
@@ -9,6 +10,7 @@ runs:
     - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
         working-directory: ${{ inputs.working-directory }}
+        version-file: ${{ hashFiles(format('{0}/.tool-versions', inputs.working-directory)) != '' && '.tool-versions' || '' }}
         enable-cache: true
         # Relative to working-directory: setup-uv resolves the glob against it.
         cache-dependency-glob: uv.lock

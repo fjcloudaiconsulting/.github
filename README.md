@@ -137,8 +137,9 @@ Call as `fjcloudaiconsulting/.github/actions/<name>@v1`, after your own `actions
 so `fetch-depth` and `persist-credentials: false` stay visible in the app's workflow).
 
 - **uv-sync** (`working-directory`, default `backend`): setup-uv with its cache keyed on `uv.lock`, `uv sync --locked`,
-  and the venv's `bin` on `PATH`. The uv version comes from `[tool.uv] required-version` in `pyproject.toml` and the
-  Python version from `.python-version`; there is no version input.
+  and the venv's `bin` on `PATH`. The uv version comes from `<working-directory>/.tool-versions`
+  (`uv X.Y.Z`, kept by Renovate's asdf manager) when present, else `[tool.uv] required-version` (which uv also
+  enforces on local runs); the Python version from `.python-version`. There is no version input.
 - **pnpm-install** (`working-directory`, default `frontend`; `node-version-file`, default `.nvmrc`): setup-node from
   the version file, corepack (pnpm version from `packageManager`), the pnpm store cached on `pnpm-lock.yaml`,
   `pnpm install --frozen-lockfile`.
