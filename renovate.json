@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>fjcloudaiconsulting/.github"]
+  "extends": ["local>fjcloudaiconsulting/.github"],
+  "packageRules": [
+    {
+      "description": "Action bumps here ship to every app on @v1 only through a release, and release-please never releases chore commits: make them fix(deps), a patch release.",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "fix"
+    }
+  ]
 }
