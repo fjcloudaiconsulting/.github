@@ -5,6 +5,7 @@ The shared foundation every application repo builds on:
 - [RELEASE_CONTRACT.md](RELEASE_CONTRACT.md): what every app repo must provide (commits, versioning, images,
   runtime config, health, migrations, smoke test, deploy handoff, CI hygiene).
 - `.github/workflows/`: reusable workflows, consumed pinned to a major tag (`@v1`).
+- `actions/`: composite actions for steps every app repeats, consumed as `fjcloudaiconsulting/.github/actions/<name>@v1`.
 - `default.json`: shared Renovate preset, consumed as `github>fjcloudaiconsulting/.github#v1`.
 
 Changes here are released by tagging. Apps pick them up by bumping their pinned tag.
@@ -100,6 +101,21 @@ fails there by design.
 - Non-root images, and a Dockerfile that maps `ARG APP_VERSION` / `ARG APP_REVISION` to the app's environment
   (sections 3, 5); `revision` in the liveness JSON (section 5).
 - `concurrency` and the Renovate preset (section 9).
+
+## Composite actions
+
+Call as `fjcloudaiconsulting/.github/actions/<name>@v1`, after your own `actions/checkout` (they never check out,
+so `fetch-depth` and `persist-credentials: false` stay visible in the app's workflow).
+
+- **uv-sync** (`working-directory`, default `backend`): setup-uv with its cache keyed on `uv.lock`, `uv sync --locked`,
+  and the venv's `bin` on `PATH`. The uv version comes from `[tool.uv] required-version` in `pyproject.toml` and the
+  Python version from `.python-version`; there is no version input.
+- **pnpm-install** (`working-directory`, default `frontend`; `node-version-file`, default `.nvmrc`): setup-node from
+  the version file, corepack (pnpm version from `packageManager`), the pnpm store cached on `pnpm-lock.yaml`,
+  `pnpm install --frozen-lockfile`.
+- **no-docker-hub**: fails on any `FROM`, `image:`, `# syntax=` or `uses: docker://` reference that resolves to Docker
+  Hub, which rate-limits anonymous pulls from shared runners. Use `mirror.gcr.io/library/<name>` for official
+  images and `mirror.gcr.io/<org>/<name>` otherwise; digests are the same.
 
 ## Conformance probe
 

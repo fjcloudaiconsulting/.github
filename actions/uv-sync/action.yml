@@ -1,0 +1,19 @@
+name: uv-sync
+description: Install uv with its cache and sync the locked environment, with the venv on PATH.
+# uv and Python versions come from the project: [tool.uv] required-version in pyproject.toml and .python-version.
+inputs:
+  working-directory: {description: Directory holding pyproject.toml and uv.lock, default: backend}
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        working-directory: ${{ inputs.working-directory }}
+        enable-cache: true
+        # Relative to working-directory: setup-uv resolves the glob against it.
+        cache-dependency-glob: uv.lock
+    - shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        uv sync --locked
+        echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
