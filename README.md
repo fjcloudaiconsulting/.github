@@ -13,9 +13,10 @@ Changes here are released by tagging. Apps pick them up by bumping their pinned 
 ### Publishing a release
 
 The `publish` workflow runs release-please on every `main` push and keeps a Release PR open while there are
-unreleased `feat`/`fix`/`perf`/`deps` commits (`docs`, `ci`, `chore` never release). Merging the Release PR is the
+unreleased `feat`/`fix`/`perf` commits (`docs`, `ci`, `chore`, including Renovate's `chore(deps)`, never release). Merging the Release PR is the
 owner's approval: the workflow then creates `vX.Y.Z` (and a GitHub Release with the changelog) and moves the major
-tag (`v1`) to the same commit, so every app on `@v1` gets it at once. A breaking change (`feat!`) cuts `v2` and
+tag (`v1`) to the same commit, so every app on `@v1` gets it at once. The tag move runs on every `main` push and
+on dispatch (`publish` workflow), so a failed move heals on the next run. A breaking change (`feat!`) cuts `v2` and
 leaves `v1` alone.
 
 Only the Release App (a bypass actor on the `tag protection` ruleset) and org admins can create or move `v*` tags.
