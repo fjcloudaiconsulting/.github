@@ -139,7 +139,8 @@ so `fetch-depth` and `persist-credentials: false` stay visible in the app's work
 - **uv-sync** (`working-directory`, default `backend`): setup-uv with its cache keyed on `uv.lock`, `uv sync --locked`,
   and the venv's `bin` on `PATH`. The uv version comes from `<working-directory>/.tool-versions`
   (`uv X.Y.Z`, kept by Renovate's asdf manager) when present, else `[tool.uv] required-version` (which uv also
-  enforces on local runs); the Python version from `.python-version`. There is no version input.
+  enforces on local runs); the Python version from `.python-version`. There is no version input. Keep `.tool-versions`
+  to a single `uv` line: without one setup-uv fails, and a `python` line there overrides `.python-version`.
 - **pnpm-install** (`working-directory`, default `frontend`; `node-version-file`, default `.nvmrc`): setup-node from
   the version file, corepack (pnpm version from `packageManager`), the pnpm store cached on `pnpm-lock.yaml`,
   `pnpm install --frozen-lockfile`.

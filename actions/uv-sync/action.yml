@@ -2,6 +2,7 @@ name: uv-sync
 description: Install uv with its cache and sync the locked environment, with the venv on PATH.
 # uv version: <working-directory>/.tool-versions (`uv X.Y.Z`) when present, else [tool.uv] required-version, else latest.
 # .tool-versions pins CI without uv enforcing it on local runs, as required-version does. Python: .python-version.
+# Keep .tool-versions to one uv line: no uv line fails setup-uv, and a python line would override .python-version.
 inputs:
   working-directory: {description: Directory holding pyproject.toml and uv.lock, default: backend}
 runs:
