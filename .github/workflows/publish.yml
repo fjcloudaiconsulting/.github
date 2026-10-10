@@ -1,0 +1,65 @@
+name: publish
+
+# Releases this repo: release-please keeps a Release PR open; merging it (the owner's approval) creates vX.Y.Z,
+# then the major tag (v1) moves to the same commit so every app on @v1 picks it up. Only feat/fix/perf/deps
+# commits make a release. Tags are restricted by the `tag protection` ruleset; the Release App is its bypass actor.
+on:
+  push:
+    branches: [main]
+  # Heals a major tag that a failed run left behind.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two release-please runs at once (both would act on the same merged Release PR).
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      # An App token, not GITHUB_TOKEN, so the Release PR triggers CI and the tags pass the ruleset.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          # The release commit may change workflow files, and so may the moved major tag.
+          permission-workflows: write
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # On every run, not only when release_created: derived from the manifest, so a move that failed after the
+      # release was cut is fixed by the next push or a manual run (release-please will not report that release again).
+      - name: Point the major tag at the current release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          v=$(jq -r '."."' .release-please-manifest.json)
+          [[ $v =~ ^([0-9]+)\.[0-9]+\.[0-9]+$ ]] || { echo "bad manifest version: $v" >&2; exit 1; }
+          major=v${BASH_REMATCH[1]}
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/v$v" --jq .sha)
+          cur=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$major" --jq .object.sha 2>/dev/null || true)
+          if [ "$cur" = "$sha" ]; then
+            echo "$major already at v$v ($sha)"
+          elif [ -n "$cur" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$major" -f sha="$sha" -F force=true > /dev/null
+            echo "$major -> v$v ($sha)"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$major" -f sha="$sha" > /dev/null
+            echo "$major created at v$v ($sha)"
+          fi
