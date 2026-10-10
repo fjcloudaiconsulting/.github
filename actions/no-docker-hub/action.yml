@@ -7,8 +7,12 @@ runs:
     - shell: bash
       run: |
         hub='(docker\.io/|index\.docker\.io/|[a-z0-9_-]+(/[a-z0-9._-]+)*[:@])'
-        if git grep -nE "(^|[[:space:]])(FROM|image:)[[:space:]]+\"?(--platform=[^[:space:]]+[[:space:]]+)?$hub|syntax=$hub|uses:[[:space:]]+\"?docker://$hub" \
-             -- '*Dockerfile*' '*compose*.yml' '*compose*.yaml' '.github/workflows/*.yml' '.github/workflows/*.yaml' '*action.yml' '*action.yaml'; then
+        rc=0
+        git grep -nE "(^|[[:space:]])(FROM|image:|container:)[[:space:]]+[\"']?(--platform=[^[:space:]]+[[:space:]]+)?$hub|syntax=$hub|uses:[[:space:]]+[\"']?docker://$hub" \
+          -- '*Dockerfile*' '*compose*.yml' '*compose*.yaml' '.github/workflows/*.yml' '.github/workflows/*.yaml' '*action.yml' '*action.yaml' || rc=$?
+        if [ "$rc" -eq 0 ]; then
           echo "::error::Docker Hub image reference above. Use mirror.gcr.io/library/<name> (official images) or mirror.gcr.io/<org>/<name>."
           exit 1
         fi
+        # 1 is "no match"; anything else (no checkout, bad pattern) must not pass silently.
+        [ "$rc" -eq 1 ] || { echo "::error::git grep failed (exit $rc); run this after actions/checkout."; exit 1; }
