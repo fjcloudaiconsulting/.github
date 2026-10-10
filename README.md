@@ -153,6 +153,43 @@ so `fetch-depth` and `persist-credentials: false` stay visible in the app's work
   Hub, which rate-limits anonymous pulls from shared runners. Use `mirror.gcr.io/library/<name>` for official
   images and `mirror.gcr.io/<org>/<name>` otherwise; digests are the same.
 
+## CI naming
+
+One name per stage in every app, so a red check reads the same in any repo. Title Case, `<Area> <What>`.
+Stages an app does not have are simply absent; app-specific jobs keep their own names in the same style.
+
+**Workflows:** `CI` in `.github/workflows/ci.yml` (every check that gates a PR or a release), `PR title` in
+`pr-title.yml`.
+
+**Jobs** (the `name:` shown in checks):
+
+| Stage | Job name |
+|---|---|
+| Change detection (only where CI is scoped by path) | `Detect Changes` |
+| Repo hygiene (commit hooks, env/catalog scripts, Docker Hub guard) | `Repo Checks` |
+| Backend lint, format, types and tests | `Backend Tests`; sharded: `Backend Tests (1/6)` |
+| Migrations against the real database engine | `Backend Migrations` |
+| Frontend tests | `Frontend Tests` |
+| Frontend lint, types and production build, when a separate job | `Frontend Build` |
+| Local image smoke (build and import, no push) | `Image Smoke (<image>)` |
+| Image build through `build-image` (one per image) | `Image (<image>)`, shown as `Image (<image>) / build` |
+| Gates (required by branch protection; never rename) | `Backend Checks`, `Frontend Checks` |
+| Release through `release` | `Release`, shown as `Release / release`, `Release / promote`, `Release / smoke` |
+| PR title (required; never rename) | `pr-title / check` |
+
+**Steps** that every app has:
+
+| Step | Name |
+|---|---|
+| `actions/checkout` | `Checkout` |
+| `actions/uv-sync` | `Install backend dependencies` |
+| `actions/pnpm-install` | `Install frontend dependencies` |
+| plain `actions/setup-node` | `Set up Node` |
+| `actions/no-docker-hub` | `No Docker Hub images` |
+| ruff / ruff format / mypy / pytest | `Lint backend`, `Check backend format`, `Type-check backend`, `Run backend tests` |
+| lint / typecheck / build / tests | `Lint frontend`, `Type-check frontend`, `Build frontend`, `Run frontend tests` |
+| a gate's verdict | `Verify <what>` (e.g. `Verify every gated job passed`) |
+
 ## Conformance probe
 
 `conformance/probe.py` checks each app repo (public API only) against the release contract; the `conformance`
