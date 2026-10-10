@@ -200,6 +200,10 @@ class Probe(unittest.TestCase):
         f = run({".github/workflows/ci.yml": CI.replace(SHARED % "smoke", "./x")})
         self.assertTrue(any("smoke" in x for x in f), f)
 
+    def test_release_workflow_covers_promote_and_smoke(self):
+        ci = CI.replace(SHARED % "promote-release", SHARED % "release").replace(SHARED % "smoke", "./x")
+        self.assertEqual(run({".github/workflows/ci.yml": ci}), [])
+
 
 class Main(unittest.TestCase):
     def plan(self, argv, fetch=None):
