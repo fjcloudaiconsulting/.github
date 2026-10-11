@@ -150,9 +150,11 @@ def check(repo, ref, required_checks, fetch, org=None):
                 if not any(p.fullmatch(v) for p in OK):
                     findings.append("%s: disallowed uses: %s" % (f, v))
             m = PIN.search(line) if m else None
-            if m and org.get(m.group(1), m.group(2)) != m.group(2):
+            # Only behind the org: Renovate may land a new major in an app before the org repo.
+            if m and m.group(1) in org and int(m.group(2)) < int(org[m.group(1)]):
                 findings.append("%s: %s is v%s, org pins v%s" % (f, m.group(1), m.group(2), org[m.group(1)]))
-            if re.match(r"^\s*(-\s*)?(node|python)-version:", line):
+            # A `${{ }}` value (matrix or input) is not a literal version.
+            if re.match(r"^\s*(-\s*)?(node|python)-version:", line) and "${{" not in line:
                 findings.append("%s: literal `%s`, use %s-file" % (f, line.strip(), line.split("-version")[0].strip(" -")))
         findings += ["%s: actions/checkout without persist-credentials: false" % f
                      for step in checkout_steps(text) if not any(re.match(r"\s*(- )?persist-credentials:\s*[\"']?false\b", l) for l in step)]

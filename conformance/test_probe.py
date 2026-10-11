@@ -231,6 +231,13 @@ class Probe(unittest.TestCase):
         self.assertTrue(any("actions/checkout is v6, org pins v7" in x for x in f), f)
         self.assertFalse(any("org pins" in x for x in run(wf("actions/checkout@%s # v7.9.9" % SHA) , )), "same major, other minor")
         self.assertFalse(any("org pins" in x for x in run(wf("other/x@%s # v1" % SHA))), "action the org does not use")
+        self.assertFalse(any("org pins" in x for x in run(wf("actions/checkout@%s # v99.0.0" % SHA))), "app ahead of the org")
+
+    def test_version_expression_is_not_a_literal(self):
+        lit = CI + "      - uses: actions/setup-node@%s # v7.1.0\n        with:\n          node-version: 24\n" % SHA
+        expr = CI + "      - uses: actions/setup-node@%s # v7.1.0\n        with:\n          node-version: ${{ matrix.node }}\n" % SHA
+        self.assertTrue(any("literal" in x for x in run({".github/workflows/ci.yml": lit})))
+        self.assertFalse(any("literal" in x for x in run({".github/workflows/ci.yml": expr})))
 
     def test_org_majors_read_from_repo(self):  # guard: the probe reads this repo's real pins
         m = probe.org_majors()
