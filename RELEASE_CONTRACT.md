@@ -116,6 +116,8 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST never cancel `main` runs; superseded PR runs SHOULD be cancelled.
 - MUST extend the shared Renovate preset pinned to the major tag:
   `extends: ["github>fjcloudaiconsulting/.github#v1"]` (preset file `default.json` in this repo).
+  An app on the FastAPI + uv / Next.js + pnpm stack SHOULD also extend `github>fjcloudaiconsulting/.github:app-stack#v1`
+  (`app-stack.json`) and keep in its own config only the rules specific to it.
 - SHOULD skip jobs whose area did not change, failing open when detection is unsure.
 
 ## 10. Local development
