@@ -1,9 +1,13 @@
 """Conformance probe for RELEASE_CONTRACT.md. Prints a JSON plan; python3 stdlib only.
 
 Usage: probe.py [owner/repo[@ref] ...]   (default: every target in TARGETS)
-Known limits: a `uses:` line inside a `run: |` block is a false positive; a repo before its first
-release lacks CHANGELOG.md and is reported; `/* */` comments in a Renovate config are not skipped.
+Known limits: a `uses:` line (or a `node-version:` line) inside a `run: |` block is a false positive; a repo
+before its first release lacks CHANGELOG.md and is reported; `/* */` comments in a Renovate config are not
+skipped. The step-block scan for `persist-credentials` is indentation based (no YAML parser); action majors
+are compared only for actions this repo itself pins with a `# vX` comment, and an app pin without that
+comment is not compared.
 """
+import glob
 import json
 import os
 import re
@@ -23,6 +27,9 @@ OK = [re.compile(p) for p in (
     r"fjcloudaiconsulting/\.github/\.github/workflows/[^/@\s]+\.yml@v1",
     r"fjcloudaiconsulting/\.github/actions/[\w-]+@v1",
     r"[\w.-]+/[\w.-]+(/[^@\s]+)?@[0-9a-f]{40}")]
+PIN = re.compile(r"uses:\s*[\"']?([\w.-]+/[^@\s\"']+)@[0-9a-f]{40}[\"']?\s*#\s*v(\d+)")
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+NO_DOCKER_HUB = "fjcloudaiconsulting/.github/actions/no-docker-hub@v1"
 RENOVATE = ["renovate.json", "renovate.json5", ".github/renovate.json", ".github/renovate.json5",
             ".renovaterc", ".renovaterc.json", ".renovaterc.json5"]
 
@@ -44,7 +51,38 @@ def real_fetch(path):
         raise CouldNotRun("network: %s" % e)
 
 
-def check(repo, ref, required_checks, fetch):
+def org_majors(root=ROOT):
+    """{action: major} from this repo's own SHA pins with a `# vX` comment (workflows and composites)."""
+    majors = {}
+    for pat in (".github/workflows/*.yml", "actions/*/action.yml"):
+        for f in sorted(glob.glob(os.path.join(root, pat))):
+            with open(f) as fh:
+                for line in fh:
+                    m = PIN.search(line) if not line.lstrip().startswith("#") else None
+                    if m:
+                        majors[m.group(1)] = m.group(2)
+    return majors
+
+
+def checkout_steps(text):
+    """Yield the lines of every step that uses actions/checkout (indentation based)."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if not re.match(r"^\s*-?\s*uses:\s*[\"']?actions/checkout@", line):
+            continue
+        key = len(line) - len(line.lstrip(" -"))
+        start = i
+        while start > 0 and not (re.match(r"^\s*- ", lines[start]) and lines[start].index("-") < key):
+            start -= 1
+        d = lines[start].index("-")
+        end = i + 1
+        while end < len(lines) and not (lines[end].strip() and (len(lines[end]) - len(lines[end].lstrip()) < d or
+                                        (re.match(r"^\s*- ", lines[end]) and lines[end].index("-") <= d))):
+            end += 1
+        yield lines[start:end]
+
+
+def check(repo, ref, required_checks, fetch, org=None):
     def get(path, ok=(200,)):
         status, text = fetch(path)
         if status in ok or status == 404:
@@ -101,18 +139,50 @@ def check(repo, ref, required_checks, fetch):
     for d in listing(".github/actions"):
         files += [".github/actions/%s/action.%s" % (d, e) for e in ("yml", "yaml")]
     used = []
+    org = org_majors() if org is None else org
     for f in files:
-        for line in (read(f) or "").splitlines():
+        text = read(f) or ""
+        for line in text.splitlines():
             m = USES.match(line)
             if m:
                 v = re.sub(r"\s+#.*$", "", m.group(1)).strip().strip("\"'")
                 used.append(v)
                 if not any(p.fullmatch(v) for p in OK):
                     findings.append("%s: disallowed uses: %s" % (f, v))
+            m = PIN.search(line) if m else None
+            if m and org.get(m.group(1), m.group(2)) != m.group(2):
+                findings.append("%s: %s is v%s, org pins v%s" % (f, m.group(1), m.group(2), org[m.group(1)]))
+            if re.match(r"^\s*(-\s*)?(node|python)-version:", line):
+                findings.append("%s: literal `%s`, use %s-file" % (f, line.strip(), line.split("-version")[0].strip(" -")))
+        findings += ["%s: actions/checkout without persist-credentials: false" % f
+                     for step in checkout_steps(text) if not any(re.match(r"\s*(- )?persist-credentials:\s*[\"']?false\b", l) for l in step)]
     # The shared release workflow calls promote-release and smoke itself.
-    released = SHARED % "release" in used
-    findings += ["no call to shared workflow " + SHARED % n for n in ("pr-title", "build-image", "promote-release", "smoke")
-                 if SHARED % n not in used and not (released and n in ("promote-release", "smoke"))]
+    findings += ["no call to shared workflow " + SHARED % n + (" (direct promote-release/smoke calls are no longer accepted)" if n == "release" else "")
+                 for n in ("pr-title", "build-image", "release") if SHARED % n not in used]
+    findings += ["direct %s: use %s" % (u.split("@")[0], via) for u, via in (("astral-sh/setup-uv", "actions/uv-sync@v1"),
+                 ("googleapis/release-please-action", "the shared release.yml")) for v in used if v.startswith(u + "@")]
+    if NO_DOCKER_HUB not in used:
+        findings.append("no use of " + NO_DOCKER_HUB)
+    if read(".github/workflows/ci.yml") is None:
+        findings.append(".github/workflows/ci.yml missing")
+
+    # 3b. version files
+    if (pkg := read("frontend/package.json")) is not None:
+        if read(".nvmrc") is None:
+            findings.append(".nvmrc missing")
+        try:
+            if not json.loads(pkg).get("packageManager"):
+                findings.append("frontend/package.json has no packageManager")
+        except (ValueError, AttributeError):
+            findings.append("frontend/package.json is not valid JSON")
+    if read("backend/pyproject.toml") is not None:
+        if read("backend/.python-version") is None:
+            findings.append("backend/.python-version missing")
+        tv = read("backend/.tool-versions")
+        if tv is None:
+            findings.append("backend/.tool-versions missing")
+        elif len([l for l in tv.splitlines() if re.match(r"uv\s", l)]) != 1:
+            findings.append("backend/.tool-versions must have exactly one `uv ` line")
 
     # 4. release-please
     version = read("version.txt")

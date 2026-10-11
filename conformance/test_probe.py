@@ -10,11 +10,15 @@ R = "o/r"
 SHA = "a" * 40
 SNAP = "b" * 40
 SHARED = "fjcloudaiconsulting/.github/.github/workflows/%s.yml@v1"
-CI = "jobs:\n  x:\n" + "".join("    uses: %s\n" % (SHARED % n) for n in ("pr-title", "build-image", "promote-release", "smoke"))
+CI = "jobs:\n  x:\n" + "".join("    uses: %s\n" % (SHARED % n) for n in ("pr-title", "build-image", "release")) + \
+    "  y:\n    steps:\n      - uses: fjcloudaiconsulting/.github/actions/no-docker-hub@v1\n"
+CHECKOUT = "      - uses: actions/checkout@%s # v7.0.1\n        with:\n          persist-credentials: false\n" % ("a" * 40)
+FRONTEND = {"frontend/package.json": '{"packageManager": "pnpm@10.0.0"}', ".nvmrc": "22\n"}
+ORG = {"actions/checkout": "7"}
 CHECKS = ["Backend Checks", "Frontend Checks"]
 ALWAYS = ["Backend Checks"]
 GOOD = {
-    ".github/workflows/ci.yml": CI + "      - uses: actions/checkout@%s # v7.0.1\n" % SHA,
+    ".github/workflows/ci.yml": CI + CHECKOUT,
     "release-please-config.json": json.dumps({"release-type": "simple", "bump-minor-pre-major": True}),
     "version.txt": "0.1.0\n",
     ".release-please-manifest.json": "{}",
@@ -25,7 +29,7 @@ GOOD = {
 PROTECTED = {"protected": True, "protection": {"required_status_checks": {"contexts": CHECKS}}}
 
 
-def run(files=None, branch=PROTECTED, rules=(), ref="main", errors=None, calls=None):
+def run(files=None, branch=PROTECTED, rules=(), ref="main", errors=None, calls=None, org=ORG):
     """dict-backed fake: errors maps a path substring to a status code."""
     files = {**GOOD, **(files or {})}
     routes = {"/repos/o/r/branches/main": branch if isinstance(branch, str) else json.dumps(branch), "/repos/o/r/rules/branches/main": json.dumps(list(rules)),
@@ -47,7 +51,7 @@ def run(files=None, branch=PROTECTED, rules=(), ref="main", errors=None, calls=N
         key = path.split("?")[0]
         return (200, routes[key]) if key in routes else (404, "")
 
-    return probe.check(R, ref, ALWAYS, fetch)
+    return probe.check(R, ref, ALWAYS, fetch, org)
 
 
 def wf(*uses):
@@ -93,7 +97,7 @@ class Probe(unittest.TestCase):
         text = open(os.path.join(here, "..", "README.md")).read()
         snippets = "\n".join(re.findall(r"```yaml\n(.*?)```", text, re.S))
         self.assertIn("uses:", snippets)
-        self.assertEqual(run({".github/workflows/ci.yml": snippets}), [])
+        self.assertEqual(run({".github/workflows/ci.yml": snippets + "- uses: fjcloudaiconsulting/.github/actions/no-docker-hub@v1\n"}), [])  # README shows no-docker-hub elsewhere
 
     def test_comment_does_not_hide_tag(self):  # fence: dropping lines containing #
         f = run(wf("actions/checkout@v7 # v7"))
@@ -109,7 +113,7 @@ class Probe(unittest.TestCase):
 
     def test_one_of_two_missing(self):  # fence: any()
         branch = {"protected": True, "protection": {"required_status_checks": {"contexts": ["Backend Checks"]}}}
-        f = run({"frontend/package.json": "{}"}, branch=branch)
+        f = run(FRONTEND, branch=branch)
         self.assertEqual(len(f), 1, f)
         self.assertIn("Frontend Checks", f[0])
 
@@ -119,7 +123,7 @@ class Probe(unittest.TestCase):
 
     def test_frontend_dir_requires_frontend_check(self):  # fence: never-frontend
         branch = {"protected": True, "protection": {"required_status_checks": {"contexts": ["Backend Checks"]}}}
-        f = run({"frontend/package.json": "{}"}, branch=branch)
+        f = run(FRONTEND, branch=branch)
         self.assertEqual(f, ["required check missing: Frontend Checks"])
 
     def test_frontend_lookup_error_could_not_run(self):  # guard
@@ -202,12 +206,68 @@ class Probe(unittest.TestCase):
         self.assertEqual(run({"renovate.json": None, ".github/renovate.json5": '  "github>fjcloudaiconsulting/.github#v1",'}), [])
 
     def test_missing_shared_call(self):  # fence
-        f = run({".github/workflows/ci.yml": CI.replace(SHARED % "smoke", "./x")})
-        self.assertTrue(any("smoke" in x for x in f), f)
+        f = run({".github/workflows/ci.yml": CI.replace(SHARED % "build-image", "./x") + CHECKOUT})
+        self.assertEqual(len(f), 1, f)
+        self.assertIn("build-image", f[0])
 
-    def test_release_workflow_covers_promote_and_smoke(self):
-        ci = CI.replace(SHARED % "promote-release", SHARED % "release").replace(SHARED % "smoke", "./x")
-        self.assertEqual(run({".github/workflows/ci.yml": ci}), [])
+    def test_direct_promote_and_smoke_no_longer_accepted(self):
+        ci = CI.replace(SHARED % "release", SHARED % "promote-release") + "    uses: %s\n" % (SHARED % "smoke")
+        f = run({".github/workflows/ci.yml": ci + CHECKOUT})
+        self.assertTrue(any("release.yml@v1 (direct promote-release/smoke" in x for x in f), f)
+
+    def test_checkout_persist_credentials(self):
+        bad = CI + "      - uses: actions/checkout@%s # v7.0.1\n" % SHA
+        f = run({".github/workflows/ci.yml": bad})
+        self.assertEqual(len(f), 1, f)
+        self.assertIn("persist-credentials", f[0])
+        # step with persist-credentials in a neighbouring step still fails; "- name:" first form passes
+        nb = CI + "      - uses: actions/checkout@%s # v7.0.1\n      - run: x\n        with:\n          persist-credentials: false\n" % SHA
+        self.assertEqual(len(run({".github/workflows/ci.yml": nb})), 1)
+        named = CI + "      - name: c\n        uses: actions/checkout@%s # v7.0.1\n        with:\n          persist-credentials: false\n" % SHA
+        self.assertEqual(run({".github/workflows/ci.yml": named}), [])
+
+    def test_action_major_must_match_org(self):
+        f = run(wf("actions/checkout@%s # v6.2.0" % SHA))
+        self.assertTrue(any("actions/checkout is v6, org pins v7" in x for x in f), f)
+        self.assertFalse(any("org pins" in x for x in run(wf("actions/checkout@%s # v7.9.9" % SHA) , )), "same major, other minor")
+        self.assertFalse(any("org pins" in x for x in run(wf("other/x@%s # v1" % SHA))), "action the org does not use")
+
+    def test_org_majors_read_from_repo(self):  # guard: the probe reads this repo's real pins
+        m = probe.org_majors()
+        self.assertRegex(m["actions/checkout"], r"^\d+$")
+        self.assertIn("astral-sh/setup-uv", m)
+
+    def test_direct_setup_uv_and_release_please_flagged(self):
+        f = run(wf("astral-sh/setup-uv@%s # v10" % SHA, "googleapis/release-please-action@%s # v5" % SHA))
+        self.assertTrue(any("direct astral-sh/setup-uv" in x for x in f), f)
+        self.assertTrue(any("direct googleapis/release-please-action" in x for x in f), f)
+
+    def test_no_docker_hub_required(self):
+        f = run({".github/workflows/ci.yml": CI.replace("no-docker-hub@v1", "uv-sync@v1") + CHECKOUT})
+        self.assertEqual(f, ["no use of fjcloudaiconsulting/.github/actions/no-docker-hub@v1"])
+
+    def test_ci_yml_required(self):
+        f = run({".github/workflows/ci.yml": None, ".github/workflows/other.yml": CI + CHECKOUT})
+        self.assertEqual(f, [".github/workflows/ci.yml missing"])
+
+    def test_literal_tool_versions_flagged(self):
+        for line in ("node-version: 22", "python-version: '3.13'"):
+            f = run(wf("./x") | {".github/workflows/c.yml": "      - uses: ./x\n        with:\n          %s\n" % line})
+            self.assertEqual(len(f), 1, f)
+        self.assertEqual(run({".github/workflows/c.yml": "          node-version-file: .nvmrc\n          python-version-file: x\n"}), [])
+
+    def test_frontend_version_files(self):
+        pkg = FRONTEND
+        self.assertEqual(run(pkg, branch=PROTECTED | {"protection": {"required_status_checks": {"contexts": CHECKS}}}), [])
+        self.assertEqual(run(pkg | {".nvmrc": None}), [".nvmrc missing"])
+        self.assertEqual(run(pkg | {"frontend/package.json": "{}"}), ["frontend/package.json has no packageManager"])
+
+    def test_backend_version_files(self):
+        be = {"backend/pyproject.toml": "x", "backend/.python-version": "3.13\n", "backend/.tool-versions": "# c\nuv 0.9.0\n"}
+        self.assertEqual(run(be), [])
+        self.assertEqual(run(be | {"backend/.python-version": None}), ["backend/.python-version missing"])
+        for tv in (None, "# uv 0.9\n", "uv 1\nuv 2\n"):
+            self.assertEqual(len(run(be | {"backend/.tool-versions": tv})), 1, tv)
 
 
 class Main(unittest.TestCase):
