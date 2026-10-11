@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.3.1...v1.4.0) (2026-10-11)
+
+
+### Features
+
+* **conformance:** probe enforces the shared CI standard (INFRA-160) ([#22](https://github.com/fjcloudaiconsulting/.github/issues/22)) ([26969df](https://github.com/fjcloudaiconsulting/.github/commit/26969df6bafe6a729b851cc49c4b9ca75fef9b2b))
+* **renovate:** app-stack preset with the rules every app shares (INFRA-156) ([#23](https://github.com/fjcloudaiconsulting/.github/issues/23)) ([5ae186b](https://github.com/fjcloudaiconsulting/.github/commit/5ae186bf5642a87c5abb180964e3573e0ae84fb3))
+
 ## [1.3.1](https://github.com/fjcloudaiconsulting/.github/compare/v1.3.0...v1.3.1) (2026-10-10)
 
 
