@@ -197,8 +197,12 @@ Stages an app does not have are simply absent; app-specific jobs keep their own 
 `conformance/probe.py` checks each app repo (public API only) against the release contract; the `conformance`
 workflow runs it weekly and on dispatch (`targets`: space list of `owner/repo[@ref]`) and keeps one issue
 `Conformance drift: <repo>` per drifting repo (closed when clean). Probed: `main` is protected (not each rule) and the required
-`Backend Checks` (plus `Frontend Checks` when the repo has a top-level `frontend/`), actions pinned by SHA (or `./`, `docker://@sha256`, shared `@v1`), calls to the four shared
-workflows at `@v1`, release-please config (`simple`, `bump-minor-pre-major`), `version.txt`, manifest, `CHANGELOG.md`,
-`.env.example`, and the Renovate preset `#v1`. A ref dispatch rewrites or closes that repo's issue until the
+`Backend Checks` (plus `Frontend Checks` when the repo has a top-level `frontend/`), actions pinned by SHA (or `./`, `docker://@sha256`, shared `@v1`), calls to the shared
+`pr-title`, `build-image` and `release` workflows at `@v1` (no direct `promote-release`/`smoke`), release-please config (`simple`, `bump-minor-pre-major`), `version.txt`, manifest, `CHANGELOG.md`,
+`.env.example`, and the Renovate preset `#v1`. The shared CI standard is enforced too: `.github/workflows/ci.yml` exists; every
+`actions/checkout` sets `persist-credentials: false`; a third-party action the org also pins has the same major (`# vX`
+comment, compared against this repo's own pins); no direct `astral-sh/setup-uv` or `googleapis/release-please-action`; the
+`no-docker-hub@v1` composite is used; `.nvmrc` + `packageManager` when `frontend/package.json` exists, `backend/.python-version` +
+`backend/.tool-versions` (one `uv ` line) when `backend/pyproject.toml` exists; no literal `node-version:`/`python-version:` in workflows. A ref dispatch rewrites or closes that repo's issue until the
 next run on `main`. Scheduled workflows in public repos are
 disabled after 60 days without commits; Renovate PRs keep this repo active and GitHub emails before disabling.
