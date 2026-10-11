@@ -7,6 +7,9 @@ The shared foundation every application repo builds on:
 - `.github/workflows/`: reusable workflows, consumed pinned to a major tag (`@v1`).
 - `actions/`: composite actions for steps every app repeats, consumed as `fjcloudaiconsulting/.github/actions/<name>@v1`.
 - `default.json`: shared Renovate preset, consumed as `github>fjcloudaiconsulting/.github#v1`.
+- `app-stack.json`: Renovate rules every app on the FastAPI + uv / Next.js + pnpm stack shares (ecosystem groups, majors on
+  approval, runtime and uv groups, datastore majors held). Apps extend it next to the default:
+  `github>fjcloudaiconsulting/.github:app-stack#v1`. aws-infra does not: its per-app image bumps must stay ungrouped.
 
 Changes here are released by tagging. Apps pick them up by bumping their pinned tag.
 
