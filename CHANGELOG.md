@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.4.0...v1.5.0) (2026-10-12)
+
+
+### Features
+
+* **workflows:** build app images for linux/amd64 and linux/arm64 (INFRA-164) ([#26](https://github.com/fjcloudaiconsulting/.github/issues/26)) ([732cdbe](https://github.com/fjcloudaiconsulting/.github/commit/732cdbe0f86fef94f16115ed4ddb50afcd92945f))
+
 ## [1.4.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.3.1...v1.4.0) (2026-10-11)
 
 
