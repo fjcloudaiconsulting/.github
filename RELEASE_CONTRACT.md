@@ -51,7 +51,7 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST NOT publish `latest` or floating tags.
 - MUST set OCI labels `org.opencontainers.image.source`, `.revision`, `.version`, `.title`.
 - MUST run as a non-root user. SHOULD pin base images by digest (Renovate keeps them current).
-- Platform: `linux/amd64`.
+- Platforms: `linux/amd64` and `linux/arm64`, one multi-platform index per tag (`build-image` does both).
 - Packages stay private unless the owner decides otherwise (making a GHCR package public cannot be
   undone). The cluster pulls with a read-only token.
 

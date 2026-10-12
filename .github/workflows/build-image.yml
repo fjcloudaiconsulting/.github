@@ -7,12 +7,21 @@ on:
       target: {type: string, default: ''}
       build-contexts: {type: string, default: ''}
 
+# One multi-platform index per tag: each platform builds on its own native runner (no QEMU) and pushes by digest,
+# then `merge` tags the index sha-<7>. Nodes of either architecture pull the same tag.
 jobs:
-  build:
+  meta:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      push: ${{ steps.meta.outputs.push }}
+      ref: ${{ steps.meta.outputs.ref }}
+      tag: ${{ steps.meta.outputs.tag }}
+      title: ${{ steps.meta.outputs.title }}
+      skip: ${{ steps.guard.outputs.skip }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +45,7 @@ jobs:
           {
             echo "version=$v"
             echo "push=$push"
+            echo "ref=ghcr.io/$repo/$IMAGE"
             echo "tag=ghcr.io/$repo/$IMAGE:sha-${GITHUB_SHA::7}"
             echo "title=${GITHUB_REPOSITORY#*/}/$IMAGE"
           } >> "$GITHUB_OUTPUT"
@@ -51,40 +61,130 @@ jobs:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           err=$(mktemp)
-          if labels=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image.Config.Labels}}' 2>"$err"); then
-            [ -n "$labels" ] || { echo "empty inspect output for $TAG" >&2; exit 1; }
-            rev=$(jq -r '(. // {})["org.opencontainers.image.revision"] // ""' <<<"$labels")
-            [ -n "$rev" ] || { echo "$TAG exists but has no revision label" >&2; exit 1; }
-            [ "$rev" = "$GITHUB_SHA" ] || { echo "$TAG exists for a different revision (7-char collision)" >&2; exit 1; }
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          # .Image is one config for a single-platform image, a map of platform -> config for an index.
+          if img=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image}}' 2>"$err"); then
+            [ -n "$img" ] || { echo "empty inspect output for $TAG" >&2; exit 1; }
+            revs=$(jq -r '[if has("config") then . else .[] end | .config.Labels["org.opencontainers.image.revision"] // ""] | unique | join(" ")' <<<"$img")
+            [ "$revs" = "$GITHUB_SHA" ] || { echo "$TAG exists with revision label(s) '$revs', not $GITHUB_SHA (7-char collision or missing label)" >&2; exit 1; }
+            # Skip only what this workflow would build now. A single-platform tag of this commit predates multi-arch:
+            # rebuild it so it gains arm64 (promote-release still accepts one, to release such a commit unrebuilt).
+            # Some registries list arm64 as linux/arm64/v8.
+            if jq -e '[keys[] | sub("/v8$"; "")] | sort == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
           elif grep -qi 'not found' "$err"; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             cat "$err" >&2; exit 1
           fi
-      - if: steps.guard.outputs.skip != 'true'
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+  build:
+    name: build (${{ matrix.platform }})
+    needs: meta
+    if: needs.meta.outputs.skip != 'true'
+    strategy:
+      matrix:
+        include:
+          - {platform: linux/amd64, arch: amd64, runner: ubuntu-latest}
+          # Native arm64 runner: free for public repos. A private caller would need a paid arm runner or QEMU.
+          - {platform: linux/arm64, arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.meta.outputs.push == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           # The default builder image comes from Docker Hub, which rate-limits anonymous runner pulls (INFRA-152).
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-      - if: steps.guard.outputs.skip != 'true'
+      - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.file }}
           target: ${{ inputs.target }}
           build-contexts: ${{ inputs.build-contexts }}
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           provenance: false
-          push: ${{ steps.meta.outputs.push == 'true' }}
-          tags: ${{ steps.meta.outputs.tag }}
+          # Untagged on its own: merge publishes the index that references it as sha-<7>.
+          outputs: type=image,name=${{ needs.meta.outputs.ref }},push-by-digest=true,name-canonical=true,push=${{ needs.meta.outputs.push }}
           build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_VERSION=${{ needs.meta.outputs.version }}
             APP_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-            org.opencontainers.image.title=${{ steps.meta.outputs.title }}
-          cache-from: type=gha,scope=${{ inputs.image }}
-          cache-to: type=gha,scope=${{ inputs.image }},mode=max
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.title=${{ needs.meta.outputs.title }}
+          cache-from: type=gha,scope=${{ inputs.image }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ inputs.image }}-${{ matrix.arch }},mode=max
+      - if: needs.meta.outputs.push == 'true'
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          [[ $DIGEST =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest: $DIGEST" >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digests" && echo "$DIGEST" > "$RUNNER_TEMP/digests/$ARCH"
+      - if: needs.meta.outputs.push == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # Unique per run: the caller usually builds several images in one run.
+          name: digest-${{ inputs.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [meta, build]
+    if: needs.meta.outputs.push == 'true' && needs.meta.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          # Exact arches: a bare * would also match another image named <image>-<suffix> in the same run.
+          pattern: digest-${{ inputs.image }}-{amd64,arm64}
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+      - name: Merge the platform images
+        shell: bash
+        env:
+          REF: ${{ needs.meta.outputs.ref }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          TITLE: ${{ needs.meta.outputs.title }}
+        run: |
+          # Checked before tagging, so a wrong sha-<7> index never exists.
+          srcs=()
+          for arch in amd64 arm64; do
+            digest=$(cat "$RUNNER_TEMP/digests/$arch" || true)
+            [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad $arch digest: '$digest'" >&2; exit 1; }
+            img=$(docker buildx imagetools inspect "$REF@$digest" --format '{{json .Image}}')
+            jq -e --arg a "$arch" --arg r "$GITHUB_SHA" --arg t "$TITLE" '.os == "linux" and .architecture == $a
+              and .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t' \
+              <<<"$img" >/dev/null || { echo "$REF@$digest is not linux/$arch with revision $GITHUB_SHA and title $TITLE" >&2; exit 1; }
+            srcs+=("$REF@$digest")
+          done
+          docker buildx imagetools create -t "$TAG" "${srcs[@]}"
+          img=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image}}')
+          jq -e --arg r "$GITHUB_SHA" --arg t "$TITLE" '(has("config") | not) and ([keys[] | sub("/v8$"; "")] | sort) == ["linux/amd64", "linux/arm64"]
+            and all(.[]; .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t)' \
+            <<<"$img" >/dev/null || { echo "$TAG is not a linux/amd64 + linux/arm64 index for $GITHUB_SHA" >&2; exit 1; }
+          echo "$TAG -> $(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r .digest)"
