@@ -76,7 +76,7 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 - MUST ship migrations as the `migrations` image whose default command upgrades to head, built from the
   same commit as `backend`.
 - MUST be idempotent: a second run against the same database is a no-op, and CI proves it.
-- MUST NOT migrate on app startup. The deploy (aws-infra) runs the image as a Job before the new version
+- MUST NOT migrate on app startup. The deploy (cloud-infra) runs the image as a Job before the new version
   rolls out.
 - SHOULD be safe to run concurrently (advisory lock or `GET_LOCK`).
 - SHOULD be forward-only with expand/contract, so the previous app version keeps working against the new
@@ -90,22 +90,22 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
 
 ## 8. Deploy handoff
 
-- An app repo never deploys and never writes to `aws-infra`. Renovate in `fjcloudaiconsulting/aws-infra`
+- An app repo never deploys and never writes to `cloud-infra`. Renovate in `fjcloudaiconsulting/cloud-infra`
   watches the GHCR images and bumps the manifests to the newest `vX.Y.Z`; Flux applies what lands on `main`.
-  The other rules in this section bind `aws-infra`.
+  The other rules in this section bind `cloud-infra`.
 - A release is not a deploy: it labels a digest that is already built (§3). It reaches an environment only
-  through a change in `aws-infra`.
+  through a change in `cloud-infra`.
 - App images in every environment MUST reference `vX.Y.Z` only. `sha-` tags cannot be ordered, so nothing
   can follow them.
 - Non-production environments (staging) MUST follow `vX.Y.Z`: Renovate bumps them and merges without a PR
-  once `aws-infra` CI passes.
+  once `cloud-infra` CI passes.
 - Production MUST be bumped by a pull request; the owner merges it, and merging it is the deploy. Once an
   app has a staging environment, a production bump MUST NOT reference a tag newer than the one that app's
-  staging references on `aws-infra` `main`, and MUST NOT be merged until that tag works on staging. An
-  `aws-infra` CI check will enforce the tag rule; until it exists, review does.
+  staging references on `cloud-infra` `main`, and MUST NOT be merged until that tag works on staging. An
+  `cloud-infra` CI check will enforce the tag rule; until it exists, review does.
 - A release that fails on staging never goes to production: fix forward with the next release, which
   replaces it in the open production bump PR. Its GitHub release MAY be marked as a prerelease, so the
-  `aws-infra` release drift probe (which reads the latest release) stops reporting it while the fix is
+  `cloud-infra` release drift probe (which reads the latest release) stops reporting it while the fix is
   pending. Renovate reads GHCR tags, not GitHub releases, so the flag does not stop the bump PRs.
 
 ## 9. CI hygiene
