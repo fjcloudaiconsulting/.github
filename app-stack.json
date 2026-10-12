@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Shared rules for app repos on the FastAPI + uv / Next.js + pnpm stack. Apps extend it next to the default preset: github>fjcloudaiconsulting/.github:app-stack#v1. Not for aws-infra: its per-app image bumps must stay ungrouped.",
+  "description": "Shared rules for app repos on the FastAPI + uv / Next.js + pnpm stack. Apps extend it next to the default preset: github>fjcloudaiconsulting/.github:app-stack#v1. Not for cloud-infra: its per-app image bumps must stay ungrouped.",
   "packageRules": [
     {
       "description": "Python non-major updates in one PR. FastAPI and uvicorn stay out and get their own PRs: a FastAPI minor can change telemetry behavior (INFRA-84, INFRA-105).",
@@ -101,7 +101,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Datastore image majors are never proposed: production versions are owned by aws-infra (clusters/platform/data), and local and CI images must not run ahead of them.",
+      "description": "Datastore image majors are never proposed: production versions are owned by cloud-infra (clusters/platform/data), and local and CI images must not run ahead of them.",
       "matchDatasources": [
         "docker"
       ],
