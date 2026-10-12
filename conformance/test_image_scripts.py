@@ -41,14 +41,14 @@ def script(wf, marker):
     return "\n".join(l[10:] for l in m.group(1).splitlines())
 
 
-def img(arch, rev=SHA, version="1.2.3", title="r/backend"):
+def img(arch, rev=SHA, version="1.2.3", title="r/backend", os="linux"):
     labels = {"org.opencontainers.image.revision": rev, "org.opencontainers.image.version": version,
               "org.opencontainers.image.title": title}
-    return {"os": "linux", "architecture": arch, "config": {"Labels": labels}}
+    return {"os": os, "architecture": arch, "config": {"Labels": labels}}
 
 
-def index(*imgs):
-    return {f"linux/{i['architecture']}": i for i in imgs}
+def index(*imgs, arm="linux/arm64"):
+    return {arm if i["architecture"] == "arm64" else f"linux/{i['architecture']}": i for i in imgs}
 
 
 def run(wf, marker, refs, env=None, digests=None, merged=None):
@@ -99,6 +99,9 @@ class Guard(unittest.TestCase):
     def test_full_index_skips(self):
         self.assertEqual((0, "skip=true\n"), guard(index(img("amd64"), img("arm64")))[:2])
 
+    def test_arm64_v8_index_skips(self):
+        self.assertEqual((0, "skip=true\n"), guard(index(img("amd64"), img("arm64"), arm="linux/arm64/v8"))[:2])
+
     def test_single_platform_rebuilds(self):
         self.assertEqual((0, "skip=false\n"), guard(img("amd64"))[:2])
 
@@ -122,6 +125,13 @@ class Merge(unittest.TestCase):
         self.assertEqual(0, rc)
         self.assertEqual([f"buildx imagetools create -t {TAG} {REF}@{D_AMD} {REF}@{D_ARM}"], created)
 
+    def test_arm64_v8_index_tagged(self):
+        self.assertEqual(0, merge(DIGESTS, GOOD, index(img("amd64"), img("arm64"), arm="linux/arm64/v8"))[0])
+
+    def test_wrong_os_never_tagged(self):
+        refs = dict(GOOD, **{f"{REF}@{D_ARM}": (img("arm64", os="windows"), D_ARM)})
+        self.assertEqual((1, []), merge(DIGESTS, refs, index(img("amd64"), img("arm64")))[::2])
+
     def test_wrong_arch_never_tagged(self):
         refs = dict(GOOD, **{f"{REF}@{D_ARM}": (img("amd64"), D_ARM)})
         self.assertEqual((1, []), merge(DIGESTS, refs, index(img("amd64"), img("arm64")))[::2])
@@ -140,6 +150,9 @@ class Merge(unittest.TestCase):
     def test_digest_not_found_never_tagged(self):
         refs = {f"{REF}@{D_AMD}": GOOD[f"{REF}@{D_AMD}"]}
         self.assertEqual((1, []), merge(DIGESTS, refs, index(img("amd64"), img("arm64")))[::2])
+
+    def test_wrong_title_after_create_fails(self):
+        self.assertNotEqual(0, merge(DIGESTS, GOOD, index(img("amd64"), img("arm64", title="r/frontend")))[0])
 
     def test_bad_index_after_create_fails(self):
         self.assertNotEqual(0, merge(DIGESTS, GOOD, index(img("amd64"), img("s390x")))[0])

@@ -68,7 +68,8 @@ jobs:
             [ "$revs" = "$GITHUB_SHA" ] || { echo "$TAG exists with revision label(s) '$revs', not $GITHUB_SHA (7-char collision or missing label)" >&2; exit 1; }
             # Skip only what this workflow would build now. A single-platform tag of this commit predates multi-arch:
             # rebuild it so it gains arm64 (promote-release still accepts one, to release such a commit unrebuilt).
-            if jq -e '(has("config") | not) and (keys | sort) == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
+            # Some registries list arm64 as linux/arm64/v8.
+            if jq -e '[keys[] | sub("/v8$"; "")] | sort == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
               echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
@@ -183,7 +184,7 @@ jobs:
           done
           docker buildx imagetools create -t "$TAG" "${srcs[@]}"
           img=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image}}')
-          jq -e --arg r "$GITHUB_SHA" --arg t "$TITLE" '(has("config") | not) and (keys | sort) == ["linux/amd64", "linux/arm64"]
+          jq -e --arg r "$GITHUB_SHA" --arg t "$TITLE" '(has("config") | not) and ([keys[] | sub("/v8$"; "")] | sort) == ["linux/amd64", "linux/arm64"]
             and all(.[]; .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t)' \
             <<<"$img" >/dev/null || { echo "$TAG is not a linux/amd64 + linux/arm64 index for $GITHUB_SHA" >&2; exit 1; }
           echo "$TAG -> $(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r .digest)"
