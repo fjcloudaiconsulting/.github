@@ -66,7 +66,14 @@ jobs:
             [ -n "$img" ] || { echo "empty inspect output for $TAG" >&2; exit 1; }
             revs=$(jq -r '[if has("config") then . else .[] end | .config.Labels["org.opencontainers.image.revision"] // ""] | unique | join(" ")' <<<"$img")
             [ "$revs" = "$GITHUB_SHA" ] || { echo "$TAG exists with revision label(s) '$revs', not $GITHUB_SHA (7-char collision or missing label)" >&2; exit 1; }
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            # Skip only what this workflow would build now. A single-platform tag of this commit predates multi-arch:
+            # rebuild it so it gains arm64 (promote-release still accepts one, to release such a commit unrebuilt).
+            if jq -e '(has("config") | not) and (keys | sort) == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
           elif grep -qi 'not found' "$err"; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
@@ -148,22 +155,35 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: digest-${{ inputs.image }}-*
+          # Exact arches: a bare * would also match another image named <image>-<suffix> in the same run.
+          pattern: digest-${{ inputs.image }}-{amd64,arm64}
           path: ${{ runner.temp }}/digests
           merge-multiple: true
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
-      - shell: bash
+      - name: Merge the platform images
+        shell: bash
         env:
           REF: ${{ needs.meta.outputs.ref }}
           TAG: ${{ needs.meta.outputs.tag }}
+          TITLE: ${{ needs.meta.outputs.title }}
         run: |
-          d=$RUNNER_TEMP/digests
-          docker buildx imagetools create -t "$TAG" "$REF@$(cat "$d/amd64")" "$REF@$(cat "$d/arm64")"
+          # Checked before tagging, so a wrong sha-<7> index never exists.
+          srcs=()
+          for arch in amd64 arm64; do
+            digest=$(cat "$RUNNER_TEMP/digests/$arch" || true)
+            [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad $arch digest: '$digest'" >&2; exit 1; }
+            img=$(docker buildx imagetools inspect "$REF@$digest" --format '{{json .Image}}')
+            jq -e --arg a "$arch" --arg r "$GITHUB_SHA" --arg t "$TITLE" '.os == "linux" and .architecture == $a
+              and .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t' \
+              <<<"$img" >/dev/null || { echo "$REF@$digest is not linux/$arch with revision $GITHUB_SHA and title $TITLE" >&2; exit 1; }
+            srcs+=("$REF@$digest")
+          done
+          docker buildx imagetools create -t "$TAG" "${srcs[@]}"
           img=$(docker buildx imagetools inspect "$TAG" --format '{{json .Image}}')
-          jq -e --arg r "$GITHUB_SHA" '(keys | sort) == ["linux/amd64", "linux/arm64"]
-            and all(.[]; .config.Labels["org.opencontainers.image.revision"] == $r)' <<<"$img" >/dev/null \
-            || { echo "$TAG is not a linux/amd64 + linux/arm64 index for $GITHUB_SHA" >&2; exit 1; }
+          jq -e --arg r "$GITHUB_SHA" --arg t "$TITLE" '(has("config") | not) and (keys | sort) == ["linux/amd64", "linux/arm64"]
+            and all(.[]; .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t)' \
+            <<<"$img" >/dev/null || { echo "$TAG is not a linux/amd64 + linux/arm64 index for $GITHUB_SHA" >&2; exit 1; }
           echo "$TAG -> $(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r .digest)"
