@@ -101,8 +101,8 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
   once `cloud-infra` CI passes.
 - Production MUST be bumped by a pull request; the owner merges it, and merging it is the deploy. Once an
   app has a staging environment, a production bump MUST NOT reference a tag newer than the one that app's
-  staging references on `cloud-infra` `main`, and MUST NOT be merged until that tag works on staging. An
-  `cloud-infra` CI check will enforce the tag rule; until it exists, review does.
+  staging references on `cloud-infra` `main`, and MUST NOT be merged until that tag works on staging. The
+  `cloud-infra` CI check `.github/scripts/check-prod-tags.py` enforces the tag rule.
 - A release that fails on staging never goes to production: fix forward with the next release, which
   replaces it in the open production bump PR. Its GitHub release MAY be marked as a prerelease, so the
   `cloud-infra` release drift probe (which reads the latest release) stops reporting it while the fix is
