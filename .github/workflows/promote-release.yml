@@ -48,9 +48,10 @@ jobs:
             [[ $img =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "bad image name: $img" >&2; exit 1; }
             ref=ghcr.io/${GITHUB_REPOSITORY,,}/$img
             src=$ref:sha-${rel::7}
-            inspect "$src" '{{json .Image.Config.Labels}}' || { echo "no sha- image for $rel ($img); never rebuilt by design" >&2; exit 1; }
-            jq -e --arg v "$VERSION" --arg r "$rel" \
-              '.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r' <<<"$OUT" >/dev/null \
+            # .Image is one config for a single-platform image, a map of platform -> config for an index.
+            inspect "$src" '{{json .Image}}' || { echo "no sha- image for $rel ($img); never rebuilt by design" >&2; exit 1; }
+            jq -e --arg v "$VERSION" --arg r "$rel" '[if has("config") then . else .[] end | .config.Labels // {}]
+              | length > 0 and all(.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r)' <<<"$OUT" >/dev/null \
               || { echo "$src labels do not match version $VERSION / revision $rel" >&2; exit 1; }
             inspect "$src" '{{json .Manifest}}'
             digest=$(jq -r .digest <<<"$OUT")

@@ -46,8 +46,10 @@ jobs:
     uses: fjcloudaiconsulting/.github/.github/workflows/pr-title.yml@v1
 ```
 
-**build-image** (one image per call, runs on PRs without pushing, pushes `sha-<7>` on `main`). Example in the ziftbook
-shape: `migrations` is built from `backend/` with a different target, `frontend` takes the backend as a named context:
+**build-image** (one image per call, runs on PRs without pushing, pushes `sha-<7>` on `main`). It builds
+`linux/amd64` and `linux/arm64` on native GitHub runners (`ubuntu-24.04-arm`, free for public repos only), pushes each
+by digest and tags one multi-platform index; the per-platform manifests stay untagged in GHCR and must never be deleted.
+Example in the ziftbook shape: `migrations` is built from `backend/` with a different target, `frontend` takes the backend as a named context:
 
 ```yaml
 jobs:
@@ -175,7 +177,7 @@ Stages an app does not have are simply absent; app-specific jobs keep their own 
 | Frontend tests | `Frontend Tests` |
 | Frontend lint, types and production build, when a separate job | `Frontend Build` |
 | Local image smoke (build and import, no push) | `Image Smoke (<image>)` |
-| Image build through `build-image` (one per image) | `Image (<image>)`, shown as `Image (<image>) / build` |
+| Image build through `build-image` (one per image) | `Image (<image>)`, shown as `Image (<image>) / meta`, `/ build (linux/amd64)`, `/ build (linux/arm64)`, `/ merge` |
 | Gates (required by branch protection; never rename) | `Backend Checks`, `Frontend Checks` |
 | Release, inline (release-please job, then calls to `promote-release` and `smoke`) | `Release`, `Promote`, `Smoke` |
 | Release through the shared `release` workflow | `Release`, shown as `Release / release`, `Release / promote`, `Release / smoke` |
