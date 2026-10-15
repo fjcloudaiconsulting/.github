@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/fjcloudaiconsulting/.github/compare/v1.5.0...v1.5.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **deps:** update actions/create-github-app-token action to v3.3.0 ([#29](https://github.com/fjcloudaiconsulting/.github/issues/29)) ([ff0f64f](https://github.com/fjcloudaiconsulting/.github/commit/ff0f64f75daef11ee05b1464ccd4f5b64ba4f38b))
+
 ## [1.5.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.4.0...v1.5.0) (2026-10-12)
 
 
