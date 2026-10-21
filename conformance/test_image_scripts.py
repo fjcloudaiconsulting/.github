@@ -31,9 +31,12 @@ case $3 in
   *) echo "unexpected docker $*" >&2; exit 2;;
 esac
 """
+# `gh attestation verify` logs its arguments and exits FAKE_VERIFY_RC; `gh api` resolves the release tag to FAKE_REL.
 FAKE_GH = """#!/bin/bash
+if [ "$1" = attestation ]; then echo "$*" >> "$FAKE_DIR/verify.log"; exit "${FAKE_VERIFY_RC:-0}"; fi
 echo "commit $FAKE_REL"
 """
+SIGNER = "https://github.com/fjcloudaiconsulting/.github/.github/workflows/build-image.yml@refs/tags/v1"
 
 
 def script(wf, marker):
@@ -52,7 +55,7 @@ def index(*imgs, arm="linux/arm64"):
 
 
 def run(wf, marker, refs, env=None, digests=None, merged=None):
-    """refs: {ref: (image_json, manifest_digest)}. Returns (exit code, GITHUB_OUTPUT text, create calls)."""
+    """refs: {ref: (image_json, manifest_digest)}. Returns (exit code, GITHUB_OUTPUT text, create calls, verify calls)."""
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
         for name, body in (("docker", FAKE_DOCKER), ("gh", FAKE_GH)):
@@ -71,25 +74,37 @@ def run(wf, marker, refs, env=None, digests=None, merged=None):
         out = d / "out"
         out.touch()
         e = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}", FAKE_DIR=str(d), RUNNER_TEMP=str(d), GITHUB_SHA=SHA,
-                 GITHUB_OUTPUT=str(out), GITHUB_REPOSITORY="o/r", REF=REF, TAG=TAG, TITLE="r/backend", **(env or {}))
+                 GITHUB_OUTPUT=str(out), GITHUB_REPOSITORY="o/r", REF=REF, TAG=TAG, TITLE="r/backend")
+        e.update(env or {})
         # The runner's `shell: bash` is `bash -eo pipefail`.
         p = subprocess.run(["bash", "-eo", "pipefail", "-c", script(wf, marker)], env=e, capture_output=True, text=True)
-        log = d / "create.log"
-        return p.returncode, out.read_text(), log.read_text().splitlines() if log.exists() else []
+        lines = lambda f: (d / f).read_text().splitlines() if (d / f).exists() else []
+        return p.returncode, out.read_text(), lines("create.log"), lines("verify.log")
 
 
-def guard(image):
-    return run("build-image.yml", "- id: guard", {TAG: (image, D_IDX)} if image else {})
+def guard(image, verify_rc=0):
+    return run("build-image.yml", "- id: guard", {TAG: (image, D_IDX)} if image else {},
+               env={"FAKE_VERIFY_RC": str(verify_rc)})
 
 
 def merge(digests, refs, merged):
     return run("build-image.yml", "- name: Merge the platform images", refs, digests=digests, merged=merged)
 
 
-def promote(image):
+def promote(image, verify_rc=0):
     refs = {f"{REF}:sha-{SHA[:7]}": (image, D_IDX), f"{REF}@{D_IDX}": (image, D_IDX)} if image else {}
+    # The run's own commit is not the release commit, so a check against GITHUB_SHA would show.
     return run("promote-release.yml", "- name: Promote the release commit's images", refs,
-               env={"VERSION": "1.2.3", "IMAGES": "backend", "FAKE_REL": SHA})
+               env={"VERSION": "1.2.3", "IMAGES": "backend", "FAKE_REL": SHA, "GITHUB_SHA": OTHER,
+                    "FAKE_VERIFY_RC": str(verify_rc)})
+
+
+def assert_verified(t, calls, subject):
+    """One verify of subject that pins the signer workflow at v1, main, the commit SHA and GitHub-hosted runners."""
+    t.assertEqual(1, len(calls))
+    for part in (f"attestation verify oci://{subject} ", "--repo o/r", f"--source-digest {SHA}", "--source-ref refs/heads/main",
+                 "--deny-self-hosted-runners", f"--cert-identity {SIGNER}"):
+        t.assertIn(part, calls[0] + " ")
 
 
 class Guard(unittest.TestCase):
@@ -97,7 +112,15 @@ class Guard(unittest.TestCase):
         self.assertEqual((0, "skip=false\n"), guard(None)[:2])
 
     def test_full_index_skips(self):
-        self.assertEqual((0, "skip=true\n"), guard(index(img("amd64"), img("arm64")))[:2])
+        rc, out, _, verified = guard(index(img("amd64"), img("arm64")))
+        self.assertEqual((0, "skip=true\n"), (rc, out))
+        assert_verified(self, verified, TAG)
+
+    def test_other_image_index_rebuilds(self):
+        self.assertEqual((0, "skip=false\n"), guard(index(img("amd64", title="r/frontend"), img("arm64", title="r/frontend")))[:2])
+
+    def test_unattested_index_rebuilds(self):
+        self.assertEqual((0, "skip=false\n"), guard(index(img("amd64"), img("arm64")), verify_rc=1)[:2])
 
     def test_arm64_v8_index_skips(self):
         self.assertEqual((0, "skip=true\n"), guard(index(img("amd64"), img("arm64"), arm="linux/arm64/v8"))[:2])
@@ -121,9 +144,10 @@ DIGESTS = {"amd64": D_AMD, "arm64": D_ARM}
 
 class Merge(unittest.TestCase):
     def test_both_arches_tagged(self):
-        rc, _, created = merge(DIGESTS, GOOD, index(img("amd64"), img("arm64")))
+        rc, out, created, _ = merge(DIGESTS, GOOD, index(img("amd64"), img("arm64")))
         self.assertEqual(0, rc)
         self.assertEqual([f"buildx imagetools create -t {TAG} {REF}@{D_AMD} {REF}@{D_ARM}"], created)
+        self.assertEqual(f"digest={D_IDX}\n", out)  # the subject the attest step signs
 
     def test_arm64_v8_index_tagged(self):
         self.assertEqual(0, merge(DIGESTS, GOOD, index(img("amd64"), img("arm64"), arm="linux/arm64/v8"))[0])
@@ -159,13 +183,30 @@ class Merge(unittest.TestCase):
 
 
 class Promote(unittest.TestCase):
-    def created(self, image):
-        rc, _, created = promote(image)
+    def created(self, image, verify_rc=0):
+        rc, _, created, _ = promote(image, verify_rc)
         return rc, len(created)
 
     def test_index_promoted(self):
         self.assertEqual((0, 1), self.created(index(img("amd64"), img("arm64"))))
+        assert_verified(self, promote(index(img("amd64"), img("arm64")))[3], f"{REF}@{D_IDX}")
 
+    def test_other_image_refused(self):
+        frontend = index(img("amd64", title="r/frontend"), img("arm64", title="r/frontend"))
+        self.assertEqual((1, 0), self.created(frontend))
+
+    def test_labels_read_through_the_digest(self):
+        # The tag moved to a good-looking image after the digest was resolved: only the verified digest counts.
+        refs = {f"{REF}:sha-{SHA[:7]}": (index(img("amd64"), img("arm64")), D_IDX),
+                f"{REF}@{D_IDX}": (index(img("amd64", rev=OTHER), img("arm64", rev=OTHER)), D_IDX)}
+        rc, _, created, _ = run("promote-release.yml", "- name: Promote the release commit's images", refs,
+                                env={"VERSION": "1.2.3", "IMAGES": "backend", "FAKE_REL": SHA, "GITHUB_SHA": OTHER})
+        self.assertEqual((1, []), (rc, created))
+
+    def test_unattested_refused(self):
+        self.assertEqual((1, 0), self.created(index(img("amd64"), img("arm64")), verify_rc=1))
+
+    # Label handling only: build-image attests indexes, so a real single-platform tag has no provenance and fails verify.
     def test_single_platform_promoted(self):
         self.assertEqual((0, 1), self.created(img("amd64")))
 
