@@ -49,6 +49,9 @@ jobs:
 **build-image** (one image per call, runs on PRs without pushing, pushes `sha-<7>` on `main`). It builds
 `linux/amd64` and `linux/arm64` on native GitHub runners (`ubuntu-24.04-arm`, free for public repos only), pushes each
 by digest and tags one multi-platform index; the per-platform manifests stay untagged in GHCR and must never be deleted.
+It signs the index's build provenance (`actions/attest-build-provenance`), so the caller also grants `id-token: write`
+and `attestations: write`. A `sha-<7>` that already exists is reused only when that provenance verifies (built by
+`build-image@v1` from `main` at this commit on a GitHub-hosted runner); anything else is rebuilt over.
 Example in the ziftbook shape: `migrations` is built from `backend/` with a different target, `frontend` takes the backend as a named context:
 
 ```yaml
@@ -60,7 +63,7 @@ jobs:
           - {image: backend, context: backend, target: '', build-contexts: ''}
           - {image: migrations, context: backend, target: migrations, build-contexts: ''}
           - {image: frontend, context: frontend, target: '', build-contexts: 'backend=backend'}
-    permissions: {contents: read, packages: write}
+    permissions: {contents: read, packages: write, id-token: write, attestations: write}
     uses: fjcloudaiconsulting/.github/.github/workflows/build-image.yml@v1
     with:
       image: ${{ matrix.image }}
@@ -91,6 +94,7 @@ jobs:
       checks: read
       pull-requests: read
       packages: write
+      attestations: read # promote verifies each image's provenance before retagging it
     uses: fjcloudaiconsulting/.github/.github/workflows/release.yml@v1
     with:
       images: backend frontend migrations
@@ -98,7 +102,7 @@ jobs:
     secrets: inherit
 ```
 
-**promote-release** (retags the release commit's `sha-<7>` images as `vX.Y.Z`, never builds). The caller's `release`
+**promote-release** (retags the release commit's `sha-<7>` images as `vX.Y.Z`, never builds; refuses a digest without build-image's provenance). The caller's `release`
 job (release-please) must expose the outputs `version` (X.Y.Z) and `release_created`, and the tag `vX.Y.Z` must exist:
 
 ```yaml
@@ -106,7 +110,7 @@ jobs:
   promote:
     needs: [release, image]
     if: needs.release.outputs.release_created == 'true'
-    permissions: {contents: read, packages: write}
+    permissions: {contents: read, packages: write, attestations: read}
     uses: fjcloudaiconsulting/.github/.github/workflows/promote-release.yml@v1
     with:
       version: ${{ needs.release.outputs.version }}

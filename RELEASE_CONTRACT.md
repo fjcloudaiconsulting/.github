@@ -48,6 +48,9 @@ the default; deviate only with a reason written in the repo's CONTRIBUTING.md.
   every other commit it is `X.Y.Z-dev+<7 char sha>`, where X.Y.Z is the previous release.
 - Release MUST promote the digest built from the tagged release commit by adding the tag `vX.Y.Z`. Never
   rebuild. The release job therefore `needs` the image build job of the same run.
+- Every pushed index MUST carry a build provenance attestation signed by `build-image@v1` on a `main` push.
+  Promotion verifies it (signer workflow at `v1`, `refs/heads/main`, the release commit, GitHub-hosted runner)
+  and refuses a digest without one: labels alone do not prove where an image came from.
 - MUST NOT publish `latest` or floating tags.
 - MUST set OCI labels `org.opencontainers.image.source`, `.revision`, `.version`, `.title`.
 - MUST run as a non-root user. SHOULD pin base images by digest (Renovate keeps them current).
