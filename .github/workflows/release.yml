@@ -76,7 +76,7 @@ jobs:
   promote:
     needs: release
     if: needs.release.outputs.release_created == 'true'
-    permissions: {contents: read, packages: write}
+    permissions: {contents: read, packages: write, attestations: read}
     uses: fjcloudaiconsulting/.github/.github/workflows/promote-release.yml@v1
     with:
       version: ${{ needs.release.outputs.version }}

@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      attestations: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
       push: ${{ steps.meta.outputs.push }}
@@ -59,6 +60,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           err=$(mktemp)
           # .Image is one config for a single-platform image, a map of platform -> config for an index.
@@ -67,12 +69,18 @@ jobs:
             revs=$(jq -r '[if has("config") then . else .[] end | .config.Labels["org.opencontainers.image.revision"] // ""] | unique | join(" ")' <<<"$img")
             [ "$revs" = "$GITHUB_SHA" ] || { echo "$TAG exists with revision label(s) '$revs', not $GITHUB_SHA (7-char collision or missing label)" >&2; exit 1; }
             # Skip only what this workflow would build now. A single-platform tag of this commit predates multi-arch:
-            # rebuild it so it gains arm64 (promote-release still accepts one, to release such a commit unrebuilt).
-            # Some registries list arm64 as linux/arm64/v8.
-            if jq -e '[keys[] | sub("/v8$"; "")] | sort == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
+            # rebuild it so it gains arm64. Some registries list arm64 as linux/arm64/v8.
+            if ! jq -e '[keys[] | sub("/v8$"; "")] | sort == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
+              echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Labels are not proof: any workflow with packages: write can push a sha- tag. Skip only an index this
+            # workflow (@v1) built and attested from main at this commit; anything else is rebuilt over (INFRA-107).
+            elif gh attestation verify "oci://$TAG" --repo "$GITHUB_REPOSITORY" --source-digest "$GITHUB_SHA" \
+                --source-ref refs/heads/main --deny-self-hosted-runners \
+                --cert-identity "https://github.com/fjcloudaiconsulting/.github/.github/workflows/build-image.yml@refs/tags/v1" >/dev/null; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
-              echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
+              echo "$TAG has no build-image provenance for $GITHUB_SHA on main; rebuilding" >&2
               echo "skip=false" >> "$GITHUB_OUTPUT"
             fi
           elif grep -qi 'not found' "$err"; then
@@ -153,6 +161,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Sign the index's build provenance (Sigstore via the OIDC token); promote-release and cloud-infra verify it.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -165,6 +176,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
       - name: Merge the platform images
+        id: merge
         shell: bash
         env:
           REF: ${{ needs.meta.outputs.ref }}
@@ -187,4 +199,11 @@ jobs:
           jq -e --arg r "$GITHUB_SHA" --arg t "$TITLE" '(has("config") | not) and ([keys[] | sub("/v8$"; "")] | sort) == ["linux/amd64", "linux/arm64"]
             and all(.[]; .config.Labels["org.opencontainers.image.revision"] == $r and .config.Labels["org.opencontainers.image.title"] == $t)' \
             <<<"$img" >/dev/null || { echo "$TAG is not a linux/amd64 + linux/arm64 index for $GITHUB_SHA" >&2; exit 1; }
-          echo "$TAG -> $(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r .digest)"
+          digest=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r .digest)
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad index digest for $TAG: '$digest'" >&2; exit 1; }
+          echo "$TAG -> $digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ needs.meta.outputs.ref }}
+          subject-digest: ${{ steps.merge.outputs.digest }}

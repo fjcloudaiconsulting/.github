@@ -10,6 +10,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: read
     env:
       VERSION: ${{ inputs.version }}
       IMAGES: ${{ inputs.images }}
@@ -55,6 +56,12 @@ jobs:
               || { echo "$src labels do not match version $VERSION / revision $rel" >&2; exit 1; }
             inspect "$src" '{{json .Manifest}}'
             digest=$(jq -r .digest <<<"$OUT")
+            # Labels are not proof: any workflow with packages: write can push a sha- tag. Release only a digest that
+            # build-image (@v1) built and attested from main at the release commit (INFRA-107).
+            gh attestation verify "oci://$ref@$digest" --repo "$GITHUB_REPOSITORY" --source-digest "$rel" \
+              --source-ref refs/heads/main --deny-self-hosted-runners \
+              --cert-identity "https://github.com/fjcloudaiconsulting/.github/.github/workflows/build-image.yml@refs/tags/v1" >/dev/null \
+              || { echo "$src ($digest) has no build-image provenance for $rel on main; not releasing it" >&2; exit 1; }
             if inspect "$ref:v$VERSION" '{{json .Manifest}}'; then
               [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "$ref:v$VERSION already exists on a different digest" >&2; exit 1; }
               echo "$img: v$VERSION already promoted"; continue
