@@ -64,7 +64,7 @@ jobs:
             jq -e --arg v "$VERSION" --arg r "$rel" --arg t "${GITHUB_REPOSITORY#*/}/$img" '[if has("config") then . else .[] end | .config.Labels // {}]
               | length > 0 and all(.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r
                 and .["org.opencontainers.image.title"] == $t)' <<<"$OUT" >/dev/null \
-              || { echo "$src labels do not match version $VERSION / revision $rel / title ${GITHUB_REPOSITORY#*/}/$img" >&2; exit 1; }
+              || { echo "$ref@$digest labels do not match version $VERSION / revision $rel / title ${GITHUB_REPOSITORY#*/}/$img" >&2; exit 1; }
             if inspect "$ref:v$VERSION" '{{json .Manifest}}'; then
               [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "$ref:v$VERSION already exists on a different digest" >&2; exit 1; }
               echo "$img: v$VERSION already promoted"; continue
