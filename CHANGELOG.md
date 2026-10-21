@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/fjcloudaiconsulting/.github/compare/v1.6.0...v1.6.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* release a tagged version whose images were never promoted ([#33](https://github.com/fjcloudaiconsulting/.github/issues/33)) ([c9d40d0](https://github.com/fjcloudaiconsulting/.github/commit/c9d40d0f6e172cb4d425689c6cbbb4efa4417bc3))
+
 ## [1.6.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.5.0...v1.6.0) (2026-10-21)
 
 
