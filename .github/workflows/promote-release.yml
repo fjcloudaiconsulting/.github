@@ -49,12 +49,7 @@ jobs:
             [[ $img =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "bad image name: $img" >&2; exit 1; }
             ref=ghcr.io/${GITHUB_REPOSITORY,,}/$img
             src=$ref:sha-${rel::7}
-            # .Image is one config for a single-platform image, a map of platform -> config for an index.
-            inspect "$src" '{{json .Image}}' || { echo "no sha- image for $rel ($img); never rebuilt by design" >&2; exit 1; }
-            jq -e --arg v "$VERSION" --arg r "$rel" '[if has("config") then . else .[] end | .config.Labels // {}]
-              | length > 0 and all(.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r)' <<<"$OUT" >/dev/null \
-              || { echo "$src labels do not match version $VERSION / revision $rel" >&2; exit 1; }
-            inspect "$src" '{{json .Manifest}}'
+            inspect "$src" '{{json .Manifest}}' || { echo "no sha- image for $rel ($img); never rebuilt by design" >&2; exit 1; }
             digest=$(jq -r .digest <<<"$OUT")
             # Labels are not proof: any workflow with packages: write can push a sha- tag. Release only a digest that
             # build-image (@v1) built and attested from main at the release commit (INFRA-107).
@@ -62,6 +57,14 @@ jobs:
               --source-ref refs/heads/main --deny-self-hosted-runners \
               --cert-identity "https://github.com/fjcloudaiconsulting/.github/.github/workflows/build-image.yml@refs/tags/v1" >/dev/null \
               || { echo "$src ($digest) has no build-image provenance for $rel on main; not releasing it" >&2; exit 1; }
+            # Provenance binds the digest to the commit, not to an image name: the title tells backend from frontend.
+            # Read through the verified digest, not the tag, which can move in between.
+            # .Image is one config for a single-platform image, a map of platform -> config for an index.
+            inspect "$ref@$digest" '{{json .Image}}' || { echo "$ref@$digest not found" >&2; exit 1; }
+            jq -e --arg v "$VERSION" --arg r "$rel" --arg t "${GITHUB_REPOSITORY#*/}/$img" '[if has("config") then . else .[] end | .config.Labels // {}]
+              | length > 0 and all(.["org.opencontainers.image.version"] == $v and .["org.opencontainers.image.revision"] == $r
+                and .["org.opencontainers.image.title"] == $t)' <<<"$OUT" >/dev/null \
+              || { echo "$src labels do not match version $VERSION / revision $rel / title ${GITHUB_REPOSITORY#*/}/$img" >&2; exit 1; }
             if inspect "$ref:v$VERSION" '{{json .Manifest}}'; then
               [ "$(jq -r .digest <<<"$OUT")" = "$digest" ] || { echo "$ref:v$VERSION already exists on a different digest" >&2; exit 1; }
               echo "$img: v$VERSION already promoted"; continue

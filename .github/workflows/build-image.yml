@@ -60,6 +60,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
+          TITLE: ${{ steps.meta.outputs.title }}
           GH_TOKEN: ${{ github.token }}
         run: |
           err=$(mktemp)
@@ -70,8 +71,10 @@ jobs:
             [ "$revs" = "$GITHUB_SHA" ] || { echo "$TAG exists with revision label(s) '$revs', not $GITHUB_SHA (7-char collision or missing label)" >&2; exit 1; }
             # Skip only what this workflow would build now. A single-platform tag of this commit predates multi-arch:
             # rebuild it so it gains arm64. Some registries list arm64 as linux/arm64/v8.
-            if ! jq -e '[keys[] | sub("/v8$"; "")] | sort == ["linux/amd64", "linux/arm64"]' <<<"$img" >/dev/null; then
-              echo "$TAG is not a linux/amd64 + linux/arm64 index; rebuilding" >&2
+            # Provenance binds the digest to the commit, not to an image name: the title tells backend from frontend.
+            if ! jq -e --arg t "$TITLE" '([keys[] | sub("/v8$"; "")] | sort) == ["linux/amd64", "linux/arm64"]
+                and all(.[]; .config.Labels["org.opencontainers.image.title"] == $t)' <<<"$img" >/dev/null; then
+              echo "$TAG is not a linux/amd64 + linux/arm64 index of $TITLE; rebuilding" >&2
               echo "skip=false" >> "$GITHUB_OUTPUT"
             # Labels are not proof: any workflow with packages: write can push a sha- tag. Skip only an index this
             # workflow (@v1) built and attested from main at this commit; anything else is rebuilt over (INFRA-107).

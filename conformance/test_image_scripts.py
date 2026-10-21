@@ -116,6 +116,9 @@ class Guard(unittest.TestCase):
         self.assertEqual((0, "skip=true\n"), (rc, out))
         assert_verified(self, verified, TAG)
 
+    def test_other_image_index_rebuilds(self):
+        self.assertEqual((0, "skip=false\n"), guard(index(img("amd64", title="r/frontend"), img("arm64", title="r/frontend")))[:2])
+
     def test_unattested_index_rebuilds(self):
         self.assertEqual((0, "skip=false\n"), guard(index(img("amd64"), img("arm64")), verify_rc=1)[:2])
 
@@ -188,9 +191,22 @@ class Promote(unittest.TestCase):
         self.assertEqual((0, 1), self.created(index(img("amd64"), img("arm64"))))
         assert_verified(self, promote(index(img("amd64"), img("arm64")))[3], f"{REF}@{D_IDX}")
 
+    def test_other_image_refused(self):
+        frontend = index(img("amd64", title="r/frontend"), img("arm64", title="r/frontend"))
+        self.assertEqual((1, 0), self.created(frontend))
+
+    def test_labels_read_through_the_digest(self):
+        # The tag moved to a good-looking image after the digest was resolved: only the verified digest counts.
+        refs = {f"{REF}:sha-{SHA[:7]}": (index(img("amd64"), img("arm64")), D_IDX),
+                f"{REF}@{D_IDX}": (index(img("amd64", rev=OTHER), img("arm64", rev=OTHER)), D_IDX)}
+        rc, _, created, _ = run("promote-release.yml", "- name: Promote the release commit's images", refs,
+                                env={"VERSION": "1.2.3", "IMAGES": "backend", "FAKE_REL": SHA, "GITHUB_SHA": OTHER})
+        self.assertEqual((1, []), (rc, created))
+
     def test_unattested_refused(self):
         self.assertEqual((1, 0), self.created(index(img("amd64"), img("arm64")), verify_rc=1))
 
+    # Label handling only: build-image attests indexes, so a real single-platform tag has no provenance and fails verify.
     def test_single_platform_promoted(self):
         self.assertEqual((0, 1), self.created(img("amd64")))
 
