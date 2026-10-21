@@ -91,16 +91,24 @@ jobs:
             grep -q 'HTTP 404' "$err" || { cat "$err" >&2; exit 1; }
             echo "v$v is not tagged"; exit 0
           fi
+          # refs/tags/: a branch of the same name must not stand in for the tag.
+          r=$(gh api "repos/$GITHUB_REPOSITORY/commits/refs/tags/v$v" --jq .sha)
           docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+          # Sets rc: 0 tag present, 1 not found; any other registry error fails the step.
+          has() {
+            rc=0; docker buildx imagetools inspect "$1" >/dev/null 2>"$err" && return 0
+            grep -qi 'not found' "$err" || { cat "$err" >&2; exit 1; }
+            rc=1
+          }
           missing=""
           for img in $IMAGES; do
-            if ! docker buildx imagetools inspect "ghcr.io/${GITHUB_REPOSITORY,,}/$img:v$v" >/dev/null 2>"$err"; then
-              grep -qi 'not found' "$err" || { cat "$err" >&2; exit 1; }
-              missing="$missing $img"
-            fi
+            ref=ghcr.io/${GITHUB_REPOSITORY,,}/$img
+            has "$ref:v$v"; [ "$rc" = 1 ] || continue
+            # An image added to the list after this release has no build at the tagged commit: not a missed promote.
+            has "$ref:sha-${r::7}"; [ "$rc" = 0 ] || { echo "$img: no build at v$v, skipped"; continue; }
+            missing="$missing $img"
           done
           [ -n "$missing" ] || { echo "v$v is released"; exit 0; }
-          r=$(gh api "repos/$GITHUB_REPOSITORY/commits/v$v" --jq .sha)
           runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$r/check-runs?per_page=100" --paginate --jq '.check_runs[]' | jq -s .)
           jq -e '
             def latest($n): [.[] | select(.name == $n)] | max_by(.id);

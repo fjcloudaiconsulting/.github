@@ -9,7 +9,7 @@ case $2 in
   */contents/.release-please-manifest.json*) printf '%s\\n' "$FAKE_MANIFEST_B64";;
   */git/ref/tags/*)
     case $FAKE_TAG in 1) echo '{}';; 0) echo 'gh: Not Found (HTTP 404)' >&2; exit 1;; *) echo 'gh: Server Error (HTTP 502)' >&2; exit 1;; esac;;
-  */commits/v*) echo "$FAKE_R";;
+  */commits/refs/tags/v*) echo "$FAKE_R";;
   */check-runs*) cat "$FAKE_DIR/runs.jsonl";;
   *) echo "unexpected gh $*" >&2; exit 2;;
 esac
@@ -31,7 +31,10 @@ def script():
     return "\n".join(l[10:] for l in m.group(1).splitlines())
 
 
-def run(tagged=(), tag="1", version="1.2.3", runs=GREEN, inspect_err=False):
+SHA_TAGS = (f"{REF}/backend:sha-{R[:7]}", f"{REF}/frontend:sha-{R[:7]}")
+
+
+def run(tagged=SHA_TAGS, tag="1", version="1.2.3", runs=GREEN, inspect_err=False):
     """Returns (exit code, GITHUB_OUTPUT text)."""
     with tempfile.TemporaryDirectory() as d:
         d = pathlib.Path(d)
@@ -50,7 +53,7 @@ def run(tagged=(), tag="1", version="1.2.3", runs=GREEN, inspect_err=False):
         return p.returncode, out.read_text()
 
 
-BOTH = (f"{REF}/backend:v1.2.3", f"{REF}/frontend:v1.2.3")
+BOTH = (f"{REF}/backend:v1.2.3", f"{REF}/frontend:v1.2.3") + SHA_TAGS
 HEALED = "release_created=true\nversion=1.2.3\n"
 
 
@@ -59,11 +62,15 @@ class Heal(unittest.TestCase):
         self.assertEqual((0, ""), run(tagged=BOTH))
 
     def test_unpromoted_release_heals(self):
-        self.assertEqual((0, HEALED), run(tagged=()))
+        self.assertEqual((0, HEALED), run())
 
     def test_one_image_missing_heals(self):
         # promote stopped after the first image: the rest still need it.
-        self.assertEqual((0, HEALED), run(tagged=BOTH[:1]))
+        self.assertEqual((0, HEALED), run(tagged=(BOTH[0],) + SHA_TAGS))
+
+    def test_image_added_after_the_release_is_not_healed(self):
+        # frontend joined the list after v1.2.3: no sha- build at the tagged commit, nothing to promote.
+        self.assertEqual((0, ""), run(tagged=(BOTH[0], SHA_TAGS[0])))
 
     def test_untagged_version_is_left_alone(self):
         self.assertEqual((0, ""), run(tag="0"))
@@ -76,6 +83,10 @@ class Heal(unittest.TestCase):
 
     def test_red_release_commit_is_not_released(self):
         self.assertEqual((1, ""), run(runs=[{"name": "Backend Checks", "id": 1, "conclusion": "failure"}]))
+
+    def test_red_frontend_is_not_released(self):
+        runs = GREEN + [{"name": "Frontend Checks", "id": 2, "conclusion": "failure"}]
+        self.assertEqual((1, ""), run(runs=runs))
 
     def test_bad_manifest_fails(self):
         self.assertEqual((1, ""), run(version="1.2"))
