@@ -75,7 +75,8 @@ jobs:
 **release** (replaces calling promote-release and smoke directly): release-please, then promote and smoke on
 `release_created`. Before releasing it checks that every merged `autorelease: pending` Release PR's own commit has a
 green latest `Backend Checks` run (and `Frontend Checks`, if that run exists), and fails otherwise; re-run the job once
-that commit's CI is done. It skips when `main` has moved past the triggering commit. Its `release` job
+that commit's CI is done. It skips when `main` has moved past the triggering commit. A version that was tagged but whose images
+never got their `vX.Y.Z` tag (release-please failed after tagging) is released by the next `main` run. Its `release` job
 declares `environment: release`, so the caller needs `RELEASE_APP_ID` /
 `RELEASE_APP_PRIVATE_KEY` as secrets of its own `release` environment. Pass `secrets: inherit`: GitHub's docs do not
 settle whether environment secrets reach a called workflow without it, and a missing secret is an empty string, not an
