@@ -18,9 +18,10 @@ jobs:
       contents: read
       checks: read
       pull-requests: read
+      packages: read # heal: whether the release's images are tagged
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      version: ${{ steps.release.outputs.version }}
+      release_created: ${{ steps.release.outputs.release_created == 'true' && 'true' || steps.heal.outputs.release_created }}
+      version: ${{ steps.release.outputs.release_created == 'true' && steps.release.outputs.version || steps.heal.outputs.version }}
     steps:
       # release-please acts on main as it is now, not on this commit. If main has moved on, a merged Release PR there
       # has not passed CI yet, so leave it to the newer commit's run.
@@ -70,6 +71,52 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # release-please can tag a release and then fail before reporting it (2026-10-21: a GitHub API error right after
+      # tagging ziftbook v0.27.0), and no later run reports it again. So every main run checks that the manifest's
+      # version, once tagged, has all its images tagged too, and releases it if not. The tagged commit must have passed
+      # its gate checks; promote-release still verifies each image's provenance and is idempotent.
+      - name: Heal an unpromoted release
+        id: heal
+        if: steps.head.outputs.latest == 'true' && steps.release.outputs.release_created != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGES: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          m=$(gh api "repos/$GITHUB_REPOSITORY/contents/.release-please-manifest.json?ref=$GITHUB_SHA" --jq .content)
+          v=$(base64 -d <<<"$m" | jq -r '."."')
+          [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad manifest version: $v" >&2; exit 1; }
+          err=$(mktemp)
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$v" >/dev/null 2>"$err"; then
+            grep -q 'HTTP 404' "$err" || { cat "$err" >&2; exit 1; }
+            echo "v$v is not tagged"; exit 0
+          fi
+          # refs/tags/: a branch of the same name must not stand in for the tag.
+          r=$(gh api "repos/$GITHUB_REPOSITORY/commits/refs/tags/v$v" --jq .sha)
+          docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GH_TOKEN"
+          # Sets rc: 0 tag present, 1 not found; any other registry error fails the step.
+          has() {
+            rc=0; docker buildx imagetools inspect "$1" >/dev/null 2>"$err" && return 0
+            grep -qi 'not found' "$err" || { cat "$err" >&2; exit 1; }
+            rc=1
+          }
+          missing=""
+          for img in $IMAGES; do
+            ref=ghcr.io/${GITHUB_REPOSITORY,,}/$img
+            has "$ref:v$v"; [ "$rc" = 1 ] || continue
+            # An image added to the list after this release has no build at the tagged commit: not a missed promote.
+            has "$ref:sha-${r::7}"; [ "$rc" = 0 ] || { echo "$img: no build at v$v, skipped"; continue; }
+            missing="$missing $img"
+          done
+          [ -n "$missing" ] || { echo "v$v is released"; exit 0; }
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$r/check-runs?per_page=100" --paginate --jq '.check_runs[]' | jq -s .)
+          jq -e '
+            def latest($n): [.[] | select(.name == $n)] | max_by(.id);
+            latest("Backend Checks").conclusion == "success"
+            and (latest("Frontend Checks") == null or latest("Frontend Checks").conclusion == "success")
+          ' <<<"$runs" >/dev/null || { echo "v$v ($r) is not promoted, but its gate checks are not green; re-run once they are" >&2; exit 1; }
+          echo "v$v ($r) is tagged but not promoted (missing:$missing); releasing it now"
+          { echo "release_created=true"; echo "version=$v"; } >> "$GITHUB_OUTPUT"
 
   # Full ref, not ./: a local path in a nested call is not guaranteed to resolve to this repo. Pinned to @v1, so a change
   # to promote-release/smoke reaches callers only once v1 moves.
