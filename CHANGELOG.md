@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.5.0...v1.6.0) (2026-10-21)
+
+
+### Features
+
+* attest image provenance and verify it before skipping a build or promoting (INFRA-107) ([#31](https://github.com/fjcloudaiconsulting/.github/issues/31)) ([be9cff1](https://github.com/fjcloudaiconsulting/.github/commit/be9cff170dba8ba9801e8a50aa36f1d73377e479))
+
+
+### Bug Fixes
+
+* **deps:** update actions/create-github-app-token action to v3.3.0 ([#29](https://github.com/fjcloudaiconsulting/.github/issues/29)) ([ff0f64f](https://github.com/fjcloudaiconsulting/.github/commit/ff0f64f75daef11ee05b1464ccd4f5b64ba4f38b))
+* **deps:** update github artifact actions (major) ([#28](https://github.com/fjcloudaiconsulting/.github/issues/28)) ([f3bff60](https://github.com/fjcloudaiconsulting/.github/commit/f3bff60732cde98e832de0427599626545475209))
+
 ## [1.5.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.4.0...v1.5.0) (2026-10-12)
 
 
