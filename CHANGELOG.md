@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/fjcloudaiconsulting/.github/compare/v1.6.1...v1.6.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* **deps:** update astral-sh/setup-uv action to v10.3.3 ([#35](https://github.com/fjcloudaiconsulting/.github/issues/35)) ([01fd554](https://github.com/fjcloudaiconsulting/.github/commit/01fd5547222c85c7837ae092b6b987e7c8828b75))
+
 ## [1.6.1](https://github.com/fjcloudaiconsulting/.github/compare/v1.6.0...v1.6.1) (2026-10-21)
 
 
