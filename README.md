@@ -6,8 +6,12 @@ The shared foundation every application repo builds on:
   runtime config, health, migrations, smoke test, deploy handoff, CI hygiene).
 - `.github/workflows/`: reusable workflows, consumed pinned to a major tag (`@v1`).
 - `actions/`: composite actions for steps every app repeats, consumed as `fjcloudaiconsulting/.github/actions/<name>@v1`.
-- `default.json`: shared Renovate preset, consumed as `github>fjcloudaiconsulting/.github#v1`.
-- `app-stack.json`: Renovate rules every app on the FastAPI + uv / Next.js + pnpm stack shares (ecosystem groups, majors on
+- `default.json`: shared Renovate preset, consumed as `github>fjcloudaiconsulting/.github#v1`. Minor, patch, digest and
+  pin updates wait for a weekly window (Monday before 06:00 Europe/Amsterdam) and arrive grouped per ecosystem (GitHub
+  Actions, Docker, Terraform providers); the Dependency Dashboard's "Awaiting Schedule" list lets one through early.
+  Majors, security fixes and the org's own packages (cloud-infra's app image bumps, shared workflow refs) are not
+  scheduled.
+- `app-stack.json`: Renovate rules every app on the FastAPI + uv / Next.js + pnpm stack shares (Python group, npm release age, majors on
   approval, runtime and uv groups, datastore majors held). Apps extend it next to the default:
   `github>fjcloudaiconsulting/.github:app-stack#v1`. cloud-infra does not: its per-app image bumps must stay ungrouped.
 

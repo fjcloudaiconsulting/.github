@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Shared rules for app repos on the FastAPI + uv / Next.js + pnpm stack. Apps extend it next to the default preset: github>fjcloudaiconsulting/.github:app-stack#v1. Not for cloud-infra: its per-app image bumps must stay ungrouped.",
+  "description": "Shared rules for app repos on the FastAPI + uv / Next.js + pnpm stack. Apps extend it next to the default preset: github>fjcloudaiconsulting/.github:app-stack#v1. Not for cloud-infra: its per-app image bumps must stay ungrouped. The weekly schedule and the GitHub Actions and Docker groups live in the default preset.",
   "packageRules": [
     {
       "description": "Python non-major updates in one PR. FastAPI and uvicorn stay out and get their own PRs: a FastAPI minor can change telemetry behavior (INFRA-84, INFRA-105).",
@@ -23,30 +23,6 @@
         "npm"
       ],
       "minimumReleaseAge": "1 day"
-    },
-    {
-      "description": "GitHub Actions non-major and digest updates in one PR.",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest"
-      ],
-      "groupName": "github-actions non-major"
-    },
-    {
-      "description": "Docker non-major and digest updates in one PR.",
-      "matchDatasources": [
-        "docker"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest"
-      ],
-      "groupName": "docker non-major"
     },
     {
       "description": "OpenTelemetry packages move together in their own PR, apart from the ecosystem groups: their versions are released in lockstep, and INFRA-84 owns the telemetry standard.",
