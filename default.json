@@ -6,6 +6,7 @@
     "docker:pinDigests",
     "helpers:pinGitHubActionDigestsToSemver"
   ],
+  "timezone": "Europe/Amsterdam",
   "packageRules": [
     {
       "description": "Shared workflows are consumed by major tag (RELEASE_CONTRACT.md): track major tags only, never pin to a digest.",
@@ -14,6 +15,65 @@
       ],
       "extractVersion": "^(?<version>v\\d+)$",
       "pinDigests": false
+    },
+    {
+      "description": "Non-major updates (minor, patch, digest, pin) are reviewed once a week, Monday morning, in the ecosystem groups below (INFRA-143). Majors have no schedule. Security fixes ignore it: Renovate's vulnerabilityAlerts default sets schedule [] and is forced over every rule. The org's own packages stay immediate: cloud-infra's release bumps of app images, shared workflow refs. A dashboard tick (approval or Awaiting Schedule) creates the branch at once.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "matchPackageNames": [
+        "!fjcloudaiconsulting/**",
+        "!ghcr.io/fjcloudaiconsulting/**"
+      ],
+      "schedule": [
+        "before 6am on monday"
+      ]
+    },
+    {
+      "description": "GitHub Actions non-major and digest updates in one PR. Actions and reusable workflows only: a version input such as setup-terraform's terraform_version stays in its own group (cloud-infra's terraform monorepo).",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action",
+        "workflow"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "github-actions non-major"
+    },
+    {
+      "description": "Docker non-major and digest updates in one PR. Org images are not grouped here: cloud-infra groups its app image bumps per environment.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "!ghcr.io/fjcloudaiconsulting/**"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "docker non-major"
+    },
+    {
+      "description": "Terraform provider non-major updates in one PR, across stacks.",
+      "matchDatasources": [
+        "terraform-provider"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "terraform providers non-major"
     }
   ]
 }
