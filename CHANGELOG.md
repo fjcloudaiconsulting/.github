@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/fjcloudaiconsulting/.github/compare/v1.7.0...v1.7.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update github-actions non-major ([#39](https://github.com/fjcloudaiconsulting/.github/issues/39)) ([74476d9](https://github.com/fjcloudaiconsulting/.github/commit/74476d92bd1fd6eee98b294ed56515f00e484b55))
+
 ## [1.7.0](https://github.com/fjcloudaiconsulting/.github/compare/v1.6.2...v1.7.0) (2026-11-03)
 
 
